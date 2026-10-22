@@ -1,0 +1,47 @@
+PANDANOTE 设备 OTA 协议 v1
+
+本契约定义管理端已实现的接口；设备端 worker/helper 是否支持，仍须通过受控接入核验，不能由内容同步能力推断。
+
+一、入口与身份
+本地独立 reader app：/reader/v1/ota/{check,chunk,report}。
+云端独立 reader role：/pandanote/reader/v1/ota/{check,chunk,report}。
+全部 POST，HTTPS/Bearer；管理会话、Cookie、Origin、查询串和重复身份头不得用于 OTA。管理 app 不挂载设备接口。请求唯一 Content-Length，禁止 Transfer-Encoding，实际长度须完全一致，Content-Type: application/json。返回准确 Content-Length，无重定向。设备 ID 取认证映射，不取正文或路径。本地 token 必须经维护入口核验唯一设备绑定。
+
+二、JSON 与标识
+严格 UTF-8，拒绝重复键、未知字段、浮点数、非有限数和深度超过 8。整数不得用布尔值代替，安全上限 9007199254740991。schema 必须为整数 1。
+摘要和 request_nonce：64 位小写 hex；nonce 为 32 字节随机值。attempt_id、event_id：32hex；boot_id：24hex。Base64 必须规范编码。
+
+三、check
+正文上限 4096 字节，字段恰为：schema,request_nonce,model,channel,ota_abi,old_package_sha256,old_native_sha256,old_boot_id,old_inittab_sha256,old_current_sha256,live_superblock_sha256,highest_sequence。
+ota_abi=1。无可用目标：200 {schema:1,status:"no_update"}。
+候选待构建：202 {schema:1,retry_seconds:60}。
+就绪：200 {schema:1,status:"update",release,deployment,candidate_b64}。
+解码候选最大 256 KiB，整份响应最大 768 KiB。同认证设备与 nonce 绑定原请求，改正文返回 nonce_conflict；有效期内重传返回原封装。授权过期须使用新 nonce；旧基线不受控则拒绝，不能反向采集并信任设备文件。目标低于设备或服务端序号高水位不派发。
+
+四、chunk
+正文上限 1024 字节，字段恰为 schema,bundle_sha256,index。
+段大小 262144 字节，index 从 0 起，末段取剩余字节。返回原始二进制，禁止 Range 和客户端路径。只有认证设备自己的有效 grant 可下载；已暂停任务的有效授权仍可下载，取消或撤回后停止后续段。不存在和无权访问均为 404 not_found。对象的单硬链接、长度、权限及封存文件属性须一致，短读拒绝。
+
+五、report
+正文上限 4096 字节，字段恰为 schema,attempt_id,event_id,sequence,bundle_sha256,active_native_sha256,state,error_code,boot_id。
+成功持久化后 200 {schema:1,ok:true}。过期、撤回和任务结束仍允许关联历史 grant 的合法报告。
+state 枚举：IDLE,CHECKING,OFFERED,DOWNLOADING,VERIFIED,WAITING_SAFE_WINDOW,APPLYING,COMMITTED_PENDING_REBOOT,BOOT_VERIFYING,HEALTHY,ROLLED_BACK,RECOVERY_REQUIRED。
+error_code 枚举：none,network_failure,signature_invalid,authorization_expired,baseline_mismatch,bundle_invalid,storage_insufficient,power_unsafe,window_busy,prepare_cancelled,proof_invalid,apply_failed,reboot_failed,health_failed,recovery_required,internal_error。
+无关联目标的 IDLE/CHECKING 不上报本接口。HEALTHY 必须 error_code=none，且 active identity 与目标一致；ROLLED_BACK 身份须匹配受控旧包。终态互相矛盾保留原终态和全部事件，设置证据冲突并暂停。事件同键同正文幂等，不同正文 event_conflict；attempt 不可换目标、序号或包。中间事件可跳跃，迟到阶段不倒退；服务端接收时间不是设备执行顺序。仅 HEALTHY 更新已确认完整基线，内容 ACK 不更新 OTA。
+
+六、签名
+ECDSA P-256、SHA-256、DER；签名输入为 SHA256(domain || raw_payload)，不是二次散列。
+发布域为 ASCII PANDANOTE-OTA-RELEASE-1 后跟单个 LF；部署域为 ASCII PANDANOTE-OTA-DEPLOYMENT-1 后跟单个 LF。
+外层恰为 {schema,key_id,payload_b64,signature_b64}，schema=1，签名最大 128 字节。验签原始 payload 字节，禁止先重新序列化。key_id 必须存在于设备引导信任根。
+发布 payload 最大 256 KiB、封装最大 352 KiB，字段恰为 schema,model,channel,sequence,version,native_sha256,boot_id,ota_abi,workspace_schema,files。
+ota_abi=1、workspace_schema=1。files 最多 128 项，每项恰为 path,mode,bytes,sha256,role，沿 NORMAL 路径、权限与闭包约束。
+部署 payload 最大 16 KiB、封装最大 24 KiB，字段恰为 schema,device_id,request_nonce,release_sha256,sequence,old_package_sha256,old_native_sha256,old_boot_id,old_inittab_sha256,old_current_sha256,live_superblock_sha256,candidate_sha256,bundle_sha256,bundle_bytes,helper_sha256,issued_at,expires_at。
+默认有效期 3600 秒，设备上限 86400 秒；时间为整数 Unix 秒。release_sha256 对原发布 payload 求摘要，candidate_sha256 对完整 manifest 原文求摘要；native_sha256 是 native manifest 身份，不是 ELF 摘要。bundle 最大 24 MiB，不压缩。候选 files 必须与批准发布完全一致。
+
+七、失败与限速
+错误 {schema:1,ok:false,error:{code,message}}，设备 message 固定等于 code。
+400 invalid_input；411 length_required；413 too_large；401 unauthorized；403 forbidden；404 not_found。
+409 ota_not_enrolled,baseline_unsupported,baseline_mismatch,incompatible_release,nonce_conflict,event_conflict,attempt_conflict,grant_expired,release_revoked。
+429 rate_limited，Retry-After 为有界秒数；503 signing_unavailable,build_unavailable,storage_failure,response_too_large。
+默认每设备 check 每分钟 2 次、report 每分钟 60 次、chunk 每秒 4 次且并发最多 2。
+撤回不能使离线设备已经持有的有效签名即时失效，管理端不远程打断 APPLYING。

@@ -6,13 +6,27 @@ from starlette.concurrency import run_in_threadpool
 from .images import Crop,MAX_UPLOAD
 from .service import ManagerError
 
-def install_device_api(app,prefix,fleet,json_body,body):
+class LocalOtaDeviceScope:
+    """已明确绑定的本地设备继续复用原内容根及同步生命周期。"""
+    def __init__(self,ota,service,coordinator):
+        self.ota=ota;self.service=service;self.coordinator=coordinator
+    def bundle(self,device_id):
+        from .ota import OtaError
+        from types import SimpleNamespace
+        if device_id!=self.ota.config.get('local_device_id'):raise ValueError('unknown device')
+        try:self.ota.device(device_id)
+        except OtaError:raise ValueError('unknown device') from None
+        return SimpleNamespace(service=self.service,coordinator=self.coordinator)
+
+
+def install_device_api(app,prefix,fleet,json_body,body,*,include_inventory=True):
     router=APIRouter(prefix=prefix+'/api/devices')
     def device(device_id:str):
         try:return fleet.bundle(device_id)
         except ValueError:raise HTTPException(404,'设备不存在') from None
-    @router.get('')
-    async def devices():return dict(schema=1,ok=True,devices=await run_in_threadpool(fleet.devices))
+    if include_inventory:
+        @router.get('')
+        async def devices():return dict(schema=1,ok=True,devices=await run_in_threadpool(fleet.devices))
     @router.get('/{device_id}/status')
     def status(bundle=Depends(device)):
         value=bundle.service.status()

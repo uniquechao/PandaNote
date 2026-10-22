@@ -285,9 +285,16 @@ def create_app(root, provider=None, *, port=8767, service=None, coordinator_fact
             if value:raise ValueError('invalid deletion')
             result=await run_in_threadpool(provider_operation,'delete_source',source_id);coordinator.notify_change();return result
 
-    if fleet:
+    from .ota_api import install_ota_admin_api
+    ota_service=install_ota_admin_api(app,root,prefix,fleet)
+
+    device_scope=fleet
+    if fleet is None and ota_service and ota_service.config.get('local_device_id'):
+        from .device_api import LocalOtaDeviceScope
+        device_scope=LocalOtaDeviceScope(ota_service,service,coordinator)
+    if device_scope:
         from .device_api import install_device_api
-        install_device_api(app,prefix,fleet,json_body,body)
+        install_device_api(app,prefix,device_scope,json_body,body,include_inventory=fleet is not None)
     return app
 
 

@@ -33,6 +33,8 @@ def create_cloud_reader_app(root,profile,*,clock=time.time):
         response.headers.update({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'})
         if response.status_code==401:response.headers['WWW-Authenticate']='Bearer'
         return response
+    from .ota_api import install_ota_reader_api
+    install_ota_reader_api(app,root,lambda request,service:(profile.device(request),request.headers['authorization'][7:]),prefix)
     def device_store(request):return Store(scopes.root_for(profile.device(request)))
     @app.get(prefix+'/reader/v1/manifest')
     def manifest(request:Request):

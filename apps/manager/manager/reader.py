@@ -136,6 +136,9 @@ def create_reader_app(root, credential, *, host='127.0.0.1', port=8768, clock=ti
         response.headers['Referrer-Policy'] = 'no-referrer'
         return response
 
+    from .ota_api import install_ota_reader_api
+    install_ota_reader_api(app,root,lambda request,service:(service.config.get('local_device_id'),credential))
+
     @app.get('/reader/v1/manifest')
     def manifest():
         try:
