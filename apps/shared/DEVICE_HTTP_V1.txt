@@ -1,0 +1,102 @@
+PandaNote 966U2 device HTTP v1 — controller review candidate, 2026-10-21
+
+Ownership and activation
+- Manager remains 127.0.0.1:8767 with its existing same-origin browser session,
+  provider and one SyncCoordinator publisher. Never expose this admin app to LAN.
+- Independent manager.reader.create_reader_app has only the three reader routes
+  below; it imports no calendar provider/coordinator or admin routes.
+  Its Store writes only reader telemetry; content publication remains manager-owned.
+- manager.reader_listener.ReaderServer defaults to 127.0.0.1:8768, HTTP loopback.
+  Importing modules/configuration does not bind or start anything. Controller
+  alone provisions private files, verifies an owned interface, starts the listener
+  and changes any device guard/profile. No listener was activated for delivery.
+- Optional --host <numeric owned IPv4> --tls requires TLS for any non-loopback host.
+  Wildcard, multicast, reserved, DNS and IPv6 binds are rejected. No LAN HTTP mode.
+  Host header must match that exact configured numeric authority (including port).
+
+Private provisioning (no credentials in URLs, argv, environment, logs or examples)
+- Under the existing ignored project data root, private/ is owned by the manager
+  user, mode0700. Fixed files, each regular/single-link/no-symlink/owned/mode0600:
+    private/reader-token       32..128 URL-safe ASCII bytes, no newline
+    private/reader-server.crt  PEM server certificate when --tls is selected
+    private/reader-server.key  unencrypted PEM private key when --tls is selected
+- Generate actual token/key/cert only at controller activation, never in committed
+  fixture/example directories. Provision token and client trust data over the
+  separately reviewed USB path, never over unauthenticated discovery or Wi-Fi.
+- TLS uses a P-256 ECDSA certificate with the chosen numeric IPv4 in its IP SAN,
+  TLS1.2 ECDHE-ECDSA-AES128-GCM-SHA256; the server also permits TLS1.3 for compatible
+  clients. Minimum TLS1.2. Certificate and key load from pinned file descriptors.
+- Native integration agreement: provision PEM leaf trust anchor, certificateSha256
+  as 64 lowercase hexadecimal SHA256 of the exact DER leaf certificate, and a
+  trusted bootstrapEpoch for validity checking before the device has real time.
+  Native requires peer chain/validity/IP verification plus exact certificate pin.
+  Never disable verification to work around a 1970 RTC. Certificate/IP/token
+  rotation requires controlled reprovisioning. Native TLS code/physical handshake
+  are separate controller acceptance gates; this API tested an offline handshake.
+- Candidate command shape (controller only, after review; no secret arguments):
+    python -m manager.reader_listener --data-root <owned-project-data-root>
+  Add explicit --host <owned-numeric-IPv4> --tls for the reviewed network profile.
+  This is configuration documentation, not evidence of a running service.
+
+All reader routes
+- Authorization: Bearer <private token> in one header. Browser session cookies do
+  not authenticate. Origins are rejected. No query strings or CORS routes.
+- Authentication/Host checks precede disk access. No access log. Responses do not
+  reflect input, secrets or storage diagnostics. Cache-Control:no-store.
+- All failures are structured {schema:1,ok:false,error:{code,message}} where
+  message is a stable nonsecret code. Unknown routes are404. Authentication401,
+  boundary403, invalid input400, required length411, size413, missing version404,
+  corrupt/incomplete/unsafe package409, storage500. Unknown-route404 uses the
+  framework JSON response. Failures must preserve the client's last good view.
+
+GET /reader/v1/manifest
+- Successful JSON (<=65536 bytes), exactly:
+  {schema:1,version:<32 lowercase hex>,serverEpoch:<fresh UTC integer>,
+   generatedAt:<published snapshot UTC integer>,pollSeconds:300,
+   files:[{name,bytes,sha256,path},...]}
+- files order/names: content.ini, background.png, SHA256SUMS. sha256 is lowercase
+  hex over exact bytes. Paths are /reader/v1/resources/<version>/<name> only.
+- Selected version is captured once. Captured exact resource bytes are validated
+  against SHA256SUMS. Metadata belongs to that version; concurrent publication
+  cannot mix versions. Old immutable versions are retained; no pruning is added.
+- Every successful request gets fresh serverEpoch and records last_contact_at.
+  A no-change version refreshes contact/time without requiring download or paint.
+  generatedAt is a snapshot timestamp, never a live clock anchor. No content yet
+  returns404/not_published. Resource/manifest integrity failure returns409.
+
+GET /reader/v1/resources/<version>/<name>
+- Exactly the three names above, immutable version identifier only; no user paths.
+- Limits: content.ini131072, background.png2097152, SHA256SUMS512 bytes.
+- Every response captures bounded regular single-link files through pinned
+  directory/file descriptors (no symlink traversal), verifies the complete checksum
+  file and matching INI version, and serves the captured bytes. No FileResponse
+  reopening race. Resource download records no successful display.
+
+POST /reader/v1/ack
+- Content-Type:application/json, explicit Content-Length, <=1024 bytes, no transfer
+  encoding, duplicate keys, extra keys or query strings.
+- Exactly {schema:1,version:<known immutable32hex>,displayed:true}; strict integer
+  schema (not boolean) and true boolean. Server revalidates the package.
+- Client sends only AFTER package validation/load AND successful paint. Server
+  trusts the authenticated client's display claim; it cannot observe physical ink.
+- Response {schema:1,ok:true}. An atomic SQLite telemetry update records contact,
+  last_displayed_version and last_displayed_at. Later polling changes contact
+  only. /api/status exposes these records separately, with state=contact_recorded;
+  a contact record alone does not assert currently online or physical acceptance.
+
+Device-local Wi-Fi setup (user correction, 2026-10-21)
+- Scan/select/password/connect belong to the native reader application only.
+- The Mac manager displays connection/sync/contact/display status; it has no Wi-Fi
+  form, credential queue, private queue storage or Wi-Fi configuration routes.
+- The removed /api/device/wifi-queue path returns404 even to an authenticated local
+  manager session. Sending credentials there creates no queue/private file.
+- This scope change does not inspect, migrate or delete any existing actual private
+  files. Actual data/lifecycle actions remain controller-owned.
+- Native radio initialization, live scan/connect and phone services retain their
+  separate controller guard and acceptance gates. Reader API/TLS provisioning is
+  independent of user Wi-Fi credentials; no secret-returning endpoint is added.
+
+Feishu CalDAV is cancelled. This change adds no CalDAV integration, credential
+handling, EventKit expansion or calendar writes. Validated Mac EventKit stays the
+selected source. iPhone BLE/control and book/file transfer remain separate radio
+and native integration work, not claims made by this API.

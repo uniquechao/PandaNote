@@ -1,0 +1,96 @@
+#!/bin/sh
+# Foreground service policy; no app/USB stop, rescue, debugfs or automatic retry.
+normal_suspend_finish(){
+    NORMAL_SUSPEND_RESULT=$1
+    if "$NORMAL_SUSPEND_HELPER" finish "$NORMAL_SUSPEND_GENERATION" "$NORMAL_SUSPEND_TOKEN" "$NORMAL_SUSPEND_RESULT"; then
+        NORMAL_SUSPEND_TOKEN=;NORMAL_SUSPEND_RESULT=
+    fi
+    return 0
+}
+normal_suspend_init(){
+    NORMAL_SUSPEND_HELPER="$release/power/suspend-helper.mipsel"
+    NORMAL_SUSPEND_LOCK=/user/pandanote/state/normal-install.lock
+    NORMAL_SUSPEND_GENERATION=;NORMAL_SUSPEND_TOKEN=;NORMAL_SUSPEND_RESULT=
+    RADIO_SCRIPTS="$release/radio";RADIO_RUNTIME=/tmp/pandanote-connectivity;RADIO_FIRMWARE=/module_driver/firmware
+    CPUINFO_FILE=/proc/cpuinfo;MODULES_FILE=/proc/modules
+    . "$release/radio/radio-normal-library.sh" || return 1
+    "$NORMAL_SUSPEND_HELPER" radio-capture || return 1
+    NORMAL_SUSPEND_GENERATION=$("$NORMAL_SUSPEND_HELPER" generation "$$") || return 1
+    "$NORMAL_SUSPEND_HELPER" setup "$NORMAL_SUSPEND_GENERATION"
+}
+normal_radio_sleep(){
+    "$NORMAL_SUSPEND_HELPER" radio-stop || return 1
+    bb ifconfig wlan0 down || return 1
+    bb rmmod aic8800_fdrv || return 1
+    [ ! -d /sys/module/aic8800_fdrv ] && [ ! -d /sys/class/net/wlan0 ]
+}
+normal_radio_wake(){
+    local radio_state_code=0
+    "$NORMAL_SUSPEND_HELPER" radio-state || radio_state_code=$?
+    case "$radio_state_code" in
+      0) return 0;;
+      10) ;; # Both exactly captured children exited; safe to recreate their runtime names.
+      11) "$NORMAL_SUSPEND_HELPER" radio-stop || return 1;; # Bounded recovery of the remaining verified child.
+      *) return 1;; # Stale ownership never launches duplicate processes.
+    esac
+    "$NORMAL_SUSPEND_HELPER" radio-clean || return 1
+    # The retained start function installs temporary traps: isolate those traps
+    # from the service's TERM handler. Reuse the existing private runtime only.
+    (
+        exec 9>&-
+        radio_verify_inputs && radio_session_tools_ready && radio_load_wifi && radio_start_children
+    ) || return 1
+    "$NORMAL_SUSPEND_HELPER" radio-capture || return 1
+    local restore_status=0 restore_code
+    bb printf '[request]\nschema=1\naction=wifi-restore\n' | "$RADIO_RUNTIME/pandanote-radio.mipsel" wifi-restore > "$DEV_RUN/wifi-restore.status" || restore_status=$?
+    restore_code=$(bb sed -n 's/^code=//p' "$DEV_RUN/wifi-restore.status")
+    case "$restore_code" in saved_network_absent) return 0;; association_requested) [ "$restore_status" = 0 ];; *) return 1;; esac
+}
+normal_suspend_perform(){
+    local suspend_code=0 suspend_result=failed
+    if ! "$NORMAL_SUSPEND_HELPER" check "$NORMAL_SUSPEND_GENERATION" "$NORMAL_SUSPEND_TOKEN" "$DEV_PID_app" "$release"; then normal_suspend_finish unsafe;return;fi
+    if [ -e "$DEV_RUN/poweroff.request" ] || [ -L "$DEV_RUN/poweroff.request" ]; then normal_suspend_finish busy;return;fi
+    if ! normal_runtime_ok || ! normal_child_running app || ! normal_child_running adbd; then normal_suspend_finish unsafe;return;fi
+    if ! normal_radio_sleep; then normal_radio_wake || :;normal_suspend_finish failed;return;fi
+    if [ -e "$DEV_RUN/poweroff.request" ] || [ -L "$DEV_RUN/poweroff.request" ]; then
+        normal_radio_wake || :;normal_suspend_finish busy;return
+    fi
+    if bb sync; then
+        "$NORMAL_SUSPEND_HELPER" mem "$NORMAL_SUSPEND_GENERATION" "$NORMAL_SUSPEND_TOKEN" "$DEV_PID_app" "$release" || suspend_code=$?
+        case "$suspend_code" in 0) suspend_result=resumed;;24) suspend_result=timer;;22) suspend_result=unsafe;;*) suspend_result=failed;;esac
+    fi
+    normal_radio_wake || suspend_result=failed
+    normal_suspend_finish "$suspend_result"
+}
+normal_suspend_locked(){
+    if [ -n "${NORMAL_SUSPEND_TOKEN-}" ]; then
+        local reconcile_code=0
+        "$NORMAL_SUSPEND_HELPER" reconcile "$NORMAL_SUSPEND_GENERATION" "$NORMAL_SUSPEND_TOKEN" || reconcile_code=$?
+        case "$reconcile_code" in
+          0) normal_suspend_finish "$NORMAL_SUSPEND_RESULT";return 0;;
+          10) NORMAL_SUSPEND_TOKEN=;NORMAL_SUSPEND_RESULT=;;
+          *) return 0;;
+        esac
+    fi
+    local claim_code=0
+    NORMAL_SUSPEND_TOKEN=$("$NORMAL_SUSPEND_HELPER" claim "$NORMAL_SUSPEND_GENERATION" "$DEV_PID_app" "$release") || claim_code=$?
+    if [ "$claim_code" != 0 ]; then
+        NORMAL_SUSPEND_TOKEN=
+        [ "$claim_code" != 12 ] || "$NORMAL_SUSPEND_HELPER" abort "$NORMAL_SUSPEND_GENERATION" || :
+        return 0
+    fi
+    normal_suspend_perform
+}
+normal_suspend_cycle(){
+    [ -n "${NORMAL_SUSPEND_GENERATION-}" ] || return 0
+    # Acquire before parsing/claiming. UI cancellation takes the same lease,
+    # so a removed request cannot be cached and executed after cancellation.
+    if [ -L "$NORMAL_SUSPEND_LOCK" ]; then return 0;fi
+    if [ -e "$NORMAL_SUSPEND_LOCK" ] && ! normal_private_file "$NORMAL_SUSPEND_LOCK"; then return 0;fi
+    if ! (umask 077; : >> "$NORMAL_SUSPEND_LOCK"); then return 0;fi
+    if ! normal_private_file "$NORMAL_SUSPEND_LOCK"; then return 0;fi
+    exec 9>> "$NORMAL_SUSPEND_LOCK" || return 0
+    if bb flock -n 9; then normal_suspend_locked;fi
+    exec 9>&-
+    return 0
+}

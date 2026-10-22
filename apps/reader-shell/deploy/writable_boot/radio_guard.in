@@ -1,0 +1,27 @@
+#!/bin/sh
+# NEW development-profile API only. Never replace/adopt the old RO proof marker.
+# Root radio integration must select this exact generated hash explicitly.
+development_load_policy() {
+    local development_sha development_fields
+    bb(){ /bin/busybox "$@"; }
+    [ -f /tmp/pandanote-development/policy.sh ] && [ ! -L /tmp/pandanote-development/policy.sh ] || return 1
+    development_fields=$(LC_ALL=C /bin/busybox ls -ldn /tmp/pandanote-development/policy.sh) || return 1
+    set -- $development_fields
+    [ "$#" -ge 6 ] && [ "$1:$2:$3" = -rw-------:1:0 ] || return 1
+    case "$4:$5" in *[!0-9:]*|:*|*:) return 1;; esac
+    development_sha=$(/bin/busybox sha256sum /tmp/pandanote-development/policy.sh) || return 1
+    [ "${development_sha%% *}" = @POLICY_SHA@ ] || return 1
+    . /tmp/pandanote-development/policy.sh
+    DEV_RUN=/tmp/pandanote-development; DEV_MOUNTS=/proc/mounts; DEV_SWAPS=/proc/swaps
+    DEV_SYS_BLOCK=/sys/class/block; DEV_NET=/sys/class/net
+}
+radio_check_storage() {
+    development_load_policy || return 1
+    dev_receipt_ok && dev_check_partitions && dev_check_mounts post || return 1
+    dev_private_file "$DEV_RUN/storage.ready" || return 1
+    [ -d /user/pandanote ] && [ ! -L /user/pandanote ]
+}
+radio_check_network() {
+    development_load_policy || return 1
+    dev_check_network && dev_check_listeners
+}

@@ -1,0 +1,44 @@
+#!/bin/sh
+normal_power_hardware(){
+    normal_helpers_empty && [ ! -d /sys/module/keyboard_gpio_add ] || return 1
+    [ "$(bb sha256sum /module_driver/keyboard_gpio_add.ko | bb cut -d ' ' -f1)" = 3629e5b1e58339aa7ce09b8408dfb3453a6458aa77f6f3183c1e71b8de44c78a ] || return 1
+    bb insmod /module_driver/keyboard_gpio_add.ko || return 1
+    bb printf '%s\n' alloc=3 > /sys/module/keyboard_gpio_add/parameters/keyboard || return 1
+    # Factory side-key pins; only the power key remains a suspend wake source.
+    bb printf '%s\n' 'gpio=PC04 key_code=104 tag=KEY_PAGEUP active_level=0 wakeup=n' > /sys/module/keyboard_gpio_add/parameters/keyboard || return 1
+    bb printf '%s\n' 'gpio=PC10 key_code=109 tag=KEY_PAGEDOWN active_level=0 wakeup=n' > /sys/module/keyboard_gpio_add/parameters/keyboard || return 1
+    bb printf '%s\n' 'gpio=PE31 key_code=87 tag=KEY_F11 active_level=0 wakeup=y' > /sys/module/keyboard_gpio_add/parameters/keyboard || return 1
+    bb printf '%s\n' register > /sys/module/keyboard_gpio_add/parameters/keyboard || return 1
+    local name
+    for name in /sys/class/input/event*/device/name; do
+        [ "$(bb cat "$name")" != md-gpio-keys ] || return 0
+    done
+    return 1
+}
+normal_hardware(){
+    normal_runtime_ok || return 1
+    normal_modules_empty && [ ! -e /sys/class/input/event0 ] || return 1
+    bb sha256sum -c @SYSTEM@/factory.sha256 >/dev/null 2>&1 || return 1
+    bb insmod /module_driver/utils.ko || return 1
+    bb insmod /module_driver/soc_spi.ko spi0_is_enable=0 spi0_miso=-1 spi0_mosi=-1 spi0_clk=-1 spi1_is_enable=1 spi1_miso=-1 spi1_mosi=PE17 spi1_clk=PE16 div_ssi_rate=100000000 || return 1
+    bb insmod /module_driver/spi_fb.ko frame_num=2 || return 1
+    bb insmod /module_driver/eink_qingyue426.ko gpio_eink_power_en=PC02 gpio_eink_rst=PE21 spi_bus_num=1 gpio_spi_cs=PE19 gpio_spi_rs=PE18 gpio_eink_ready=PE20 || return 1
+    # Stock monochrome mode keeps grayscale detail through dithering.
+    # A failed or missing display control must stop startup before input loads.
+    local eink_dither
+    [ -f /sys/devices/platform/jz-spi1.1/spi_master/spi1/spi1.0/eink_dither ] || return 1
+    bb printf '%s\n' 1 > /sys/devices/platform/jz-spi1.1/spi_master/spi1/spi1.0/eink_dither || return 1
+    eink_dither=$(bb cat /sys/devices/platform/jz-spi1.1/spi_master/spi1/spi1.0/eink_dither) || return 1
+    [ "$eink_dither" = 1 ] || return 1
+    normal_helpers_empty || return 1
+    bb insmod /module_driver/soc_i2c.ko i2c0_is_enable=1 i2c0_rate=400000 i2c0_scl=PC13 i2c0_sda=PC14 i2c1_is_enable=0 i2c1_rate=0 i2c2_is_enable=0 i2c2_rate=0 i2c3_is_enable=0 i2c3_rate=0 i2c4_is_enable=0 i2c4_rate=0 i2c5_is_enable=0 i2c5_rate=0 || return 1
+    # Loading stock focaltech_touch is forbidden: this is exact guarded c54 input.
+    [ ! -d /sys/module/focaltech_touch ] || return 1
+    bb insmod "$release/hardware/focaltech_touch-NO-UPGRADE.ko" fts_i2c_bus_num=0 fts_x_coords_min=0 fts_y_coords_min=0 fts_x_coords_max=800 fts_y_coords_max=480 fts_x_coords_flip=1 fts_y_coords_flip=0 fts_x_y_coords_exchange=1 fts_reset_gpio=PC09 fts_irq_gpio=PC12 fts_max_touch_number=2 fts_have_key=n fts_key_number=0 fts_key0_code=0 fts_key1_code=0 fts_key2_code=0 fts_key3_code=0 fts_key0_x_coords=0 fts_key1_x_coords=0 fts_key2_x_coords=0 fts_key3_x_coords=0 fts_key0_y_coords=0 fts_key1_y_coords=0 fts_key2_y_coords=0 fts_key3_y_coords=0 || return 1
+    bb insmod /module_driver/soc_adc.ko adc_vref=1800 || return 1
+    [ "$(bb cat /sys/class/graphics/fb0/virtual_size)" = 800,960 ] &&
+    [ "$(bb cat /sys/class/graphics/fb0/bits_per_pixel)" = 16 ] &&
+    [ "$(bb cat /sys/class/graphics/fb0/stride)" = 1600 ] &&
+    [ "$(bb cat /sys/class/graphics/fb0/name)" = spi_fb ] &&
+    [ "$(bb cat /sys/class/input/event0/device/name)" = fts_ts ] && normal_power_hardware
+}

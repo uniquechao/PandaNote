@@ -1,0 +1,134 @@
+C5 attach-only review candidate — not activated, power gate remains BLOCKED
+
+Purpose: a first bounded UART/H4 experiment while existing Wi-Fi/calendar/Qt
+continue. This is NOT BT power initialization, a long-lived HCI lease, controller
+acceptance, C4 activation or phone readiness. Worker never opened serial/device,
+loaded a module, wrote rfkill/GPIO, ran vendor ELF or contacted the reader.
+Only new c5/**; C1-C4/native/radio/boot/storage profiles unchanged.
+
+Exact stock inputs from read-only rootfs SHA
+acd6fe3202e9c6c87360f9030cf0e79fdac050d24462b502df891d2aa28f68b4:
+/usr/bin/btattach47536B
+  746dee0da16884400a32eb89f64df58378824927901e8afe65157d574722ea6f
+/module_driver/aic8800_bsp.ko129380B
+  35e0cb9542b2d2e3d9e7889070e4c2659e7ade5c1ab159a9f5b34c0dfa232142
+/module_driver/aic8800_fdrv.ko597424B
+  82bd636c3f6b91687ec92922bef48e4ae978a4ed9d558c502bd70a91297be1f2
+/module_driver/aic8800_btlpm.ko6548B (evidence only, NOT loaded by candidate)
+  4653f15b7cb600fc465e05928dbe0e9031eafceeb93e070611fd0d920c6f7afa
+Retained libc/loader match C1/C4 exact pins and aliases. Modules-on-disk hashes
+cannot independently prove loaded code; root's verified boot profile is required.
+Static triage/catalog/symbols/relocations and function excerpts in evidence/.
+
+Stock path verified from actual firmware script:
+GPIO reset (PE24/PD31/PA7/PC8) -> btlpm -> bluetooth rfkill unblock ->
+btattach -S1500000 -B/dev/ttyS3 -> hci0 unblock/up -> BlueZ/BlueALSA(bredr).
+That WHOLE script is forbidden here: PE24 is configured Wi-Fi wake, and PB20/
+PB19 supply/reg and clock are shared. No ttyS1 or hciattach substitution.
+The script label 'load bluetooth fw' does not mean btattach uploads firmware.
+
+Exact stock BSP disassembly establishes:
+- fdrv init_module9c..ac calls aicbsp_set_subsys(1,1); cleanup44..54 calls(1,0).
+- BSP set_subsys5ba4..5fa0 computes old/new positive-state from bitmask; only a
+  zero<->nonzero transition enters shared power/SDIO/firmware paths. With retained
+  Wi-Fi bit2, BTbit addition2->3/removal3->2 skips those paths. This is conditional
+  static control flow, not a live no-disruption guarantee or a new rfkill API.
+- Shared power path explicitly calls aic_wlan_power_off/on, jzmmc_manual_detect,
+  SDIO registration/init and firmware init. Never invoke it for this candidate.
+- BSP normal firmware init selects silicon/revision-specific tables, may run
+  aicbt_init then aicwifi_init; testmode4 skips BT, and DC/DW btenable differs.
+  UART config array in this exact module: five rows all1500000,flow1,lpm0.
+- BSP contains another bt_power/rfkill GPIO driver, but its aic_ingenic_moudle_init
+  is not called by the actual BSP init_module path. Dead/unregistered source is
+  not a live BT-only switch. btlpm's callback instead reaches set_subsys(0,on).
+- static-catalog.json decodes exact firmware tables and hashes all shipped fw_*
+  assets; includes common u02/u03 and D80 branches. Some compiled branch assets
+  are absent from the package. Do NOT choose a branch or reload firmware by name.
+
+Root-reported live snapshot (not independently acquired by worker):
+/sys/class/bluetooth empty, ttyS3root0600 char4:67, BSP+fdrv loaded, no btlpm.
+Only rfkill0phy0/wlan unblocked; no BT rfkill. Params match stock PB20/PB19/PE24,
+BT reset-1/regPA07/hostwakePD31/wakePD30/RTS-1,testmode0,fwpath/module_driver/
+firmware,mmc1. Wi-Fi IPv4+HTTPS calendar ACK and Qt running; MemAvailable36952KiB,
+CmaFree14872KiB at that snapshot. Recheck current metrics rather than trusting
+these historical numbers. No readable debugfs GPIO or exported PA7/PD31/PC8.
+
+Latest root-reported SDIO identity: vendor0xc8a1/device0x0082. Exact BSP probe
+8658..86a4 maps that to internal chipid3 (D80), not the DC/DW branch. D80 firmware
+init5084 sets btenable1; with testmode0 it reaches BT init before Wi-Fi init.
+Assuming root verified these exact loaded inputs and the successful normal
+init path, live Wi-Fi therefore supports an inference that BT patch upload
+already ran; it does not prove UART electrical readiness or silicon subrevision.
+D80 H/non-H u02 tables both use fw_adid_8800d80_u02.bin,
+fw_patch_8800d80_u02.bin and fw_patch_table_8800d80_u02.bin; optional ext0 is also
+in the package. Exact hashes are in static-catalog.json. hwinfo/cpmode were not
+readable live, so the exact revision/H table selection is still unobserved.
+No firmware replacement/reload is proposed or needed for this attach-only test.
+
+POWER GATE: no proved current PA7/PD31/PC8 electrical/clock state and no reviewed
+isolated power-write boundary. Therefore NO GPIO/rfkill/module write command is
+provided. No export GPIO, mount debugfs, remux/reset common pins, unload/reload
+BSP/fdrv, or run stock scripts as a timeout remedy. Attach failure does not
+supply permission/evidence for any of those operations.
+
+Minimal hardware-root command AFTER independent review, runtime/input/console/
+resource/coexistence preflight and root's decision to make a BT transport attempt:
+  /tmp/pandanote-connectivity/bluetooth/bin/pandanote-bt-attach-once --bounded-attach-only
+Stage only the frozen C5 binary root0700/single-link after verifying its manifest.
+C5 executes SAME opened/pinned stock fd with exact argv:
+  /usr/bin/btattach -P h4 -S 1500000 -B /dev/ttyS3
+No -N: hardware flow remains enabled; no -R/raw/AMP or vendor firmware protocol.
+-B means Primary controller, not a request to disable LE. Stock primary attach
+requests HCI RESET_ON_INIT: this is a Bluetooth state-changing action, not a
+read-only check. No raw UART writes or hciconfig power-up is added by C5.
+Actual command/constants were compared with stock ELF and official BlueZ5.54
+https://github.com/bluez/bluez/blob/5.54/tools/btattach.c
+Related AIC source is corroboration, not the PandaNote driver source:
+https://github.com/friendlyarm/aic8800/blob/main/aic8800_bsp/aicsdio.c
+https://github.com/friendlyarm/aic8800/blob/main/aic8800_bsp/aic_bsp_driver.h
+
+C5 software preflight (compile-only on target, NOT hardware-accepted): root,
+/tmp actual tmpfs; no existing HCI; exact ttyS3 metadata; no console ttyS3;
+BSP+fdrv and no btlpm; exact stock program/modules/libc/loader; bounded process
+FD scan rejects any existing char4:67 consumer. Runtime root dirs0700 and
+transport.lock0600+exclusive flock; attach/ initially empty; new attach.log0600.
+Root coordinator must hold serial/radio exclusion throughout: /proc scan is a
+snapshot and flock is advisory; stock btattach itself has no TIOCEXCL. No one
+may concurrently open UART, change modules/radio, or start another daemon.
+
+The wrapper does not open UART itself: only its exact child does. Unchanged C4
+spawn arms parent-death SIGKILL, closes inherited FDs, fixed clean env, child
+AS8MiB/stack512KiB/FD32/core0/FSIZE16KiB and unlimited cumulative CPU prerequisite.
+Parent AS12MiB/hard64MiB, stack512KiB/core0. File sizes/AS caps do not prove reader
+RSS/CMA/kernel HCI allocation fit. Root must measure baseline/during/after and
+current Wi-Fi association/IP/route/real calendar ACK, not just an SSID label.
+If Wi-Fi health regresses, stop only the owned C5 and collect evidence; do not
+reset the combo chip to try to recover BT during this test.
+
+Owned child runs5s after fexecve (spawn handshake<=1.5s), then TERM500ms, then
+KILL and at most1s reap polling using unchanged C4. User TERM/INT requests same
+cleanup. No killall/pkill/killpg/PID adoption. Idle/early death is error4; explicit
+normal stop after window is0, NOT success of HCI. Invalid inputs3, disabled2,
+startup-cancel7, incomplete cleanup6. Sanitized output always says
+controller_verified:false,power_configured:false and reports exact owned PID.
+Lock is held while wrapper runs; its file+bounded private log are retained after
+exit. If a child cannot be reaped, exit6 retains evidence but process exit releases
+flock; the nonempty attach/ directory blocks another automatic attempt. Root
+must inspect the exact unreaped PID/FD/HCI state before any manual archival/reset.
+
+Bounds apply to userspace polling/limits, not an absolute kernel deadline.
+Uninterruptible vendor UART/HCI close/init can delay SIGKILL/reaping; never mark
+that cleaned. Stock tool does not explicitly restore old termios/line discipline;
+last-close HCI unregister is expected from the4.4 kernel implementation, but
+actual driver cleanup/tty state needs verification. Do not open stty/setserial
+for 'read-only' inspection; those open the physical UART too. Root must confirm
+hci0 is absent and no owned serial FD remains after the test. Kernel primary
+registration may send HCI reset before any later 'up' operation.
+https://github.com/torvalds/linux/blob/v4.4/drivers/bluetooth/hci_ldisc.c
+
+Readiness acceptance is separate: actual adapter exists AND belongs to newly
+owned ttyS3 transport, actual local version/features response, observed LE/crypto
+support, coexistence and cleanup. Device index text/path alone is insufficient.
+Never start C4 on stale/unresponsive HCI. Fixed5s C5 detaches afterward; after
+physical proof a separately reviewed long-lived owned HCI session is needed to
+hold transport while C4 runs. C5 does not silently extend its timer or start C4.

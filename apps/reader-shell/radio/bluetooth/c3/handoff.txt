@@ -1,0 +1,98 @@
+C3 implementation / Qt and supervisor handoff, protocol v1
+
+Production CLI (source+target ELF, no caller activated):
+  pandanote-bt-service.mipsel --serve-private <owned-bluez-pid> <runtime-dir> <inbox-dir>
+Example reviewed future paths: runtime=/run/pandanote/bluetooth-app,
+inbox=/home/pandanote/inbox. Both must already exist, root-owned0700, no symlink
+component/dot/trailing separator, trustworthy root-owned ancestors. /tmp's exact
+root-owned1777 ancestor is allowed for deliberately temporary lab/RAM profiles.
+CLI does not create directories, remount, mount, flash, configure Wi-Fi, power a
+controller or start another daemon. It never invokes a shell. No phone filename
+can select outside the inbox. Runtime and inbox may reside on writable storage.
+
+CURRENT daemon compatibility address is fixed to the existing C2 private bus:
+  unix:path=/tmp/pandanote-connectivity/bluetooth/run/bus
+C1 bluetoothd state/config paths remain their pinned volatile private paths.
+C3 cannot make C1 pairing keys persistent by claiming that the inbox is persistent.
+A persistent BlueZ profile/rebuild and new pins are a separate integration change.
+
+Required supervisor order:
+1. Existing reviewed shared-radio/controller/resource preflight, exact owned
+   foreground private bus and exact owned C1 daemon; retain unreaped child handles.
+2. Authenticate bus, verify owned org.bluez unique owner+PID and actual hci0
+   Adapter1/GattManager1/LEAdvertisingManager1. Do not use a PID from a stale file.
+3. Start C3 with that OWNED daemon PID, clean bounded private stdio and environment.
+   C3 independently binds current org.bluez owner and PID; source refuses a new
+   owner, missing bond, wrong peer, wrong caller or disconnected bus.
+4. C3 exports objects, registers Agent DisplayYesNo (NO DefaultAgent takeover),
+   GATT application, then advertisement PandaNote966U2. Registration is explicit radio
+   activation, not a read-only capability probe. It stays alive until TERM/INT,
+   owner/bus failure, or an actual lifecycle/listener error. Malformed or
+   incomplete individual UI requests are closed without stopping the service. No ten-second C2 timer.
+5. Stop C3 first and wait/reap; it cancels held requests, unregisters owned
+   advertisement/application/agent, closes policy/transfer and removes only its
+   own IPC socket inode. Then stop daemon, then bus, through owned handles.
+   C2's existing query-and-exit main does not implement this persistent supervisor.
+   No current radio/Qt/stager/installer caller is changed by this package.
+
+CLI exit2=usage,3=UID/directory/resource prerequisites,4=bus/registration/runtime
+failure,5=incomplete owned cleanup;0=normal signal stop and cleanup. Root required.
+Own virtual-memory cap16MiB, stack512KiB, no core, file size<=256KiB. These are
+failure bounds, NOT measured RSS or proof the reader's64MiB accommodates every
+simultaneous process. External supervisor must keep private log volume bounded.
+
+Qt IPC — Unix stream <runtime-dir>/local.sock,0600, same effective UID via
+SO_PEERCRED/getpeereid, one request per connection. local.lock is0600 flock inode;
+never remove/reuse a stale socket by guessing ownership. Client performs network
+I/O asynchronously from Qt's GUI thread, with its own finite deadline.
+
+Request EXACT24 bytes (no newline/JSON):
+  0..3  ASCII OBT1
+  4     operation:1 open pair window,2 poll,3 local decision,4 cancel,5 effect
+  5     op3 grants: CONTROL1 and/or FILE4; all other bits forbidden
+  6     op3 allow:1 approve,0 deny
+  7     zero
+  8..23 op3 exact nonce from current poll, otherwise zero EXCEPT op5 ACK below
+Reply EXACT48 bytes:
+  0..3 OBT1
+  4    result0 accepted,1 rejected
+  5    flags pending1|approved2|active4
+  6    granted CONTROL1|FILE4
+  7    effect control opcode (only meaningful for effect kind1)
+  8..11 numeric passkey u32LE, DISPLAY ZERO-PADDED TO SIX DIGITS when pending
+  12..27 nonce16, opaque session identity; do not log or expose to unrelated UI
+  28..31 remaining pending/session milliseconds u32LE (no implicit extension)
+  32..37 exact peer address6 for local confirmation display
+  38    effect kind:0 none,1 CONTROL,5 committed FILE
+  39    zero
+  40..43 committed file byte count u32LE (kind5 only)
+  44..45 local eventID u16LE
+  46..47 zero
+Op1 closes old state then opens60s window. Poll until pending, show peer+exact
+passkey and explicit CONTROL/FILE grants, permit approve/deny/cancel. Op3 must
+include the polled nonce and selected grants; timeout30s or window end denies.
+The UI never grants based on phone fields. Op4 closes policy, clears transfers
+and causes a held Agent request to be rejected. IPC itself never writes Wi-Fi
+credentials or provisioning commands. Registering a characteristic is not pairing.
+
+Op5 reliable local delivery:
+- Peek: bytes5/6 zero, nonce zero. It returns current event without consuming it.
+- Qt deduplicates by nonce16+eventID, applies the effect once, then ACKs using
+  op5 bytes5/6=eventID little endian and bytes8..23=that exact nonce16.
+- Accepted ACK clears only that event. Duplicate ACK is idempotent; a stale ACK
+  cannot clear a newer event. Retry a failed read by peeking again. Keep the
+  dedupe key until ACK succeeds or the session closes. A nonzero eventID is allocated when each CONTROL/FILE effect is produced,
+  before any peek or ACK. IDs are opaque and can skip if a trusted alternate
+  consumer has taken an event. Counter resets when nonce
+  changes; counter exhaustion closes the session instead of wrapping.
+- CONTROL0=status,1=home,2=refresh; no arbitrary command or key injection.
+- FILE5 means actual SHA-verified bytes finalized in configured inbox; refresh
+  the reader library by its trusted inbox mechanism. IPC does not accept a file
+  path. Stop/expiry erases pending in-memory effects; no cross-reboot delivery
+  guarantee is claimed. Disconnected sender/expired phone session cannot keep a
+  transfer alive through UI polling.
+
+Phone wire contract is contract.txt. ACK GATT is12B, not this local48B reply.
+Both GATT and local IPC have independent protocol namespaces; phone op2 remains
+rejected. Session nonce is replay binding, not encryption; secure-read/write are
+mandatory and bound to the actual BlueZ sender and connected+paired+bonded peer.

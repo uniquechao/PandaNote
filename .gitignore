@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+build/
+data/
+evidence/
+.pytest_cache/
+private-local/
+.env
+.env.*
+*.sqlite*
+*.db
+
+# Device build output, local references, generated TLS and private run state
+external-inputs/
+.test/
+*.key
+*.pem
+*.p12
+*.pfx
+*.o
+*.a
+*.mipsel

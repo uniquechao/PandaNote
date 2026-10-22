@@ -1,0 +1,26 @@
+C5 narrow attach-only candidate, no activation by worker
+Only new c5/**. C1-C4/native/radio/profile freeze unchanged. Real operator root
+already has Wi-Fi+IPv4+HTTPS calendar ACK and Qt; those must remain undisturbed.
+No GPIO/rfkill/module/power/firmware writes or stock shell script execution.
+A one-shot explicit root CLI owns exact stock /usr/bin/btattach descriptor,
+argv -P h4 -S1500000 -B/dev/ttyS3, logs <=16KiB, runs5s then TERM500ms and at
+most1s KILL/reap via unchanged reviewed C4. Parent death kills own child.
+No readiness claim from tool output or device existence. HCI RESET_ON_INIT is
+requested by stock primary attach: this is a BT transport action, not read-only.
+Serial termios is changed by stock tool; stock does not explicitly restore it.
+No new serial cleanup opens or guessed setserial/stty are introduced. Kernel
+uninterruptible waits can prevent timely reap; exit6 and report, never fake it.
+
+Before code: shared c5_run tests execute own Linux fixture only in existing
+immutable nonroot/no-network/no-device/no-host-mount/read-only lab. Actual timeout,
+early child exit, TERM-ignoring KILL/reap and unrelated sentinel survival. Freeze
+RED against empty runner.c, then GREEN same core. main hardware preflight is
+compile-only: no root/device spoofing. C4/C2 source hashes remain exact inputs.
+
+Product CLI disabled by default. Runtime must be root tmpfs, root0700 dirs,
+private flock/session log; exact stock btattach/libc/loader/BSP/fdrv pins;
+/dev/ttyS3 root0600 char4:67; no existing HCI; expected BSP+fdrv loaded without
+btlpm, console/consumer free verified by coordinator+bounded process-FD scan.
+No automatic next stage, no activation of C4, no hciconfig power-up. Remaining
+PA7/PD31/PC8 and hardware response gates stay explicit. Input file hashes cannot
+prove loaded kernel code identity independently of root's verified boot profile.

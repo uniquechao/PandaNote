@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/B-Con/crypto-algorithms",
+  "commit": "cfbde48414baacf51fc7c74f275190881f037d32",
+  "license": "Public domain, upstream README.md",
+  "purpose": "SHA-256 package integrity only; not authentication, signing, or secrets",
+  "sha256": {
+    "sha256.c": "c6320687e8e17486b09929a29da61c9e3a3f9a2903d03b825cfb08be20717885",
+    "sha256.h": "a946e621775fd8251624e77d19f25407c4b6074ab780027e5797b77c7acf79b5",
+    "README.md": "e3e04bbc27f68266c02af3a3ef6cb5e1bd217a3c92f2893b66d9f2220f732460"
+  },
+  "upstream_sha256": {
+    "sha256.c": "4cbc93d30c28cee2a056d6f52cbce6e66ff9450f1d712ee4f59761b9b4486fad",
+    "sha256.h": "a946e621775fd8251624e77d19f25407c4b6074ab780027e5797b77c7acf79b5",
+    "README.md": "e3e04bbc27f68266c02af3a3ef6cb5e1bd217a3c92f2893b66d9f2220f732460"
+  },
+  "local_changes": [
+    "Cast SHA-256 message bytes to unsigned WORD before left shifts to avoid signed int overflow undefined behavior. No algorithm change."
+  ]
+}

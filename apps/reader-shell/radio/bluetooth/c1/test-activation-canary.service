@@ -1,0 +1,5 @@
+# Offline negative fixture only; never deploy to a reader or host service path.
+[D-BUS Service]
+Name=org.pandanote.NoActivation
+Exec=/usr/bin/touch /tmp/pandanote-connectivity/bluetooth/activation-unexpected
+User=nobody

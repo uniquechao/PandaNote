@@ -1,0 +1,137 @@
+#!/bin/sh
+# Independent normal boot context. No RAM receipt or block-write-filter claim.
+bb(){ /bin/busybox "$@"; }
+@OWNED_PRIMITIVES@
+normal_helpers_off(){
+    [ -e "$N_PROC/sys/kernel/modprobe" ] && [ -e "$N_PROC/sys/kernel/hotplug" ] || return 1
+    bb printf '\n' > "$N_PROC/sys/kernel/modprobe" || return 1
+    bb printf '\n' > "$N_PROC/sys/kernel/hotplug" || return 1
+    normal_helpers_empty
+}
+normal_helpers_empty(){
+    [ -e "$N_PROC/sys/kernel/modprobe" ] && [ -e "$N_PROC/sys/kernel/hotplug" ] &&
+    [ -z "$(bb cat "$N_PROC/sys/kernel/modprobe")" ] && [ -z "$(bb cat "$N_PROC/sys/kernel/hotplug")" ]
+}
+normal_bootargs(){
+    local arg init=0 root=0 wait=0 ro=0
+    for arg in $(bb cat "$N_PROC/cmdline"); do
+        case "$arg" in
+          init=/linuxrc) init=$((init+1));; root=/dev/mmcblk0p2) root=$((root+1));;
+          rootwait) wait=$((wait+1));; ro) ro=$((ro+1));;
+          init=*|rdinit=*|root=*|rw) return 1;;
+        esac
+    done
+    [ "$init:$root:$wait:$ro" = 1:1:1:1 ]
+}
+normal_partitions(){
+    local n start size major minor
+    for n in 1 2 3 5 9; do
+        case "$n" in
+          1) start=4096;size=16384;; 2) start=20480;size=262144;;
+          3) start=282624;size=1048576;; 5) start=2379776;size=1572864;;
+          9) start=7131136;size=52019200;;
+        esac
+        [ "$(bb cat "$N_SYS/class/block/mmcblk0p$n/start")" = "$start" ] &&
+        [ "$(bb cat "$N_SYS/class/block/mmcblk0p$n/size")" = "$size" ] &&
+        [ "$(bb cat "$N_SYS/class/block/mmcblk0p$n/partition")" = "$n" ] || return 1
+        [ -b "$N_DEV/mmcblk0p$n" ] && [ ! -L "$N_DEV/mmcblk0p$n" ] || return 1
+        IFS=: read -r major minor < "$N_SYS/class/block/mmcblk0p$n/dev" || return 1
+        case "$major:$minor" in *[!0-9:]*|:*|*:) return 1;; esac
+        set -- $(normal_ls_fields "$N_DEV/mmcblk0p$n")
+        [ "$#" -ge 7 ] && [ "${5%,}:$6" = "$major:$minor" ] || return 1
+    done
+    [ "$(bb cat "$N_SYS/class/block/mmcblk0/ro")" = 0 ] || return 1
+    [ "$(bb cat "$N_SYS/class/block/mmcblk0p3/ro")" = 0 ] && [ "$(bb cat "$N_SYS/class/block/mmcblk0p9/ro")" = 0 ]
+}
+normal_mounts(){
+    local source target type options rest seen='' root=0 tmp=0 run=0 home=0 user=0 opt=0
+    case "$1" in pre|post) ;; *) return 1;; esac
+    while read -r source target type options rest; do
+        case ":$seen:" in *":$target:"*) return 1;; esac; seen="$seen:$target"
+        case "$target" in
+          /) case "$source:$type" in /dev/root:ext4|/dev/mmcblk0p2:ext4) ;; *) return 1;; esac
+             case ",$options," in *,ro,*) ;; *) return 1;; esac
+             case ",$options," in *,rw,*) return 1;; esac;root=1;;
+          /home|/user)
+             [ "$1" = post ] && [ "$type" = ext4 ] || return 1
+             case "$source:$target" in /dev/mmcblk0p3:/home) home=1;; /dev/mmcblk0p9:/user) user=1;; *) return 1;; esac
+             case ",$options," in *,rw,*) ;; *) return 1;; esac
+             case ",$options," in *,ro,*|*,noexec,*|*,noload,*|*,norecovery,*) return 1;; esac
+             case ",$options," in *,nosuid,*) ;; *) return 1;; esac
+             case ",$options," in *,nodev,*) ;; *) return 1;; esac;;
+          /run/pandanote-opt)
+             [ "$1" = post ] && [ "$source:$type" = /dev/mmcblk0p5:ext4 ] || return 1
+             case ",$options," in *,ro,*) ;; *) return 1;; esac
+             case ",$options," in *,rw,*) return 1;; esac
+             case ",$options," in *,noload,*|*,norecovery,*) ;; *) return 1;; esac; opt=1;;
+          /tmp|/run)
+             [ "$type" = tmpfs ] || return 1
+             case ",$options," in *,rw,*) ;; *) return 1;; esac
+             case "$target" in /tmp) tmp=1;; /run) run=1;; esac;;
+          *) case "$target:$type" in /proc:proc|/sys:sysfs|/dev:devtmpfs|/dev/pts:devpts|/sys/kernel/config:configfs|/dev/usb-ffs/adb:functionfs) ;; *) return 1;; esac;;
+        esac
+        case "$source:$target" in /dev/mmcblk0p3:/home|/dev/mmcblk0p9:/user|/dev/mmcblk0p5:/run/pandanote-opt|/dev/mmcblk0p2:/) ;;
+          /dev/mmcblk*:* ) return 1;; esac
+    done < "$N_PROC/mounts"
+    [ "$root:$tmp:$run" = 1:1:1 ] && [ "$(bb wc -l < "$N_PROC/swaps" | bb tr -d ' ')" = 1 ] || return 1
+    [ "$1" = pre ] || [ "$home:$user:$opt" = 1:1:1 ]
+}
+normal_modules_empty(){
+    local modules
+    [ -r "$N_PROC/modules" ] || return 1
+    modules=$(bb cat "$N_PROC/modules") || return 1
+    [ -z "$modules" ]
+}
+normal_context(){
+    normal_helpers_empty && normal_bootargs && normal_partitions && normal_mounts pre || return 1
+    normal_modules_empty || return 1
+    local board digest
+    board=$(bb sed -n 's/^system type[[:space:]]*:[[:space:]]*//p' "$N_PROC/cpuinfo")
+    case "$board" in epd86s2_pro|epd86s2e) ;; *) return 1;; esac
+    digest=$(bb dd if="$N_DEV/mmcblk0" bs=512 count=34 2>/dev/null | bb sha256sum) || return 1
+    [ "${digest%% *}" = fd502b7cdf436ac11f291b8c34d3a4e5a3f483b8b6ed95b8b1fff77a5790ffd2 ] || return 1
+    digest=$(bb sha256sum "$N_DEV/mmcblk0p1") || return 1
+    [ "${digest%% *}" = 659639c4317fed29a07b3642307988e12c0380579c8879c2858375d6c9cf1b8c ]
+}
+normal_mount_persistent(){
+    normal_context || return 1
+    local target
+    for target in /home /user; do
+        [ -d "$target" ] && normal_root_owner "$target" && [ -z "$(bb ls -A "$target")" ] || return 1
+    done
+    # Journal replay on p3/p9 is an authorized persistent write; never format/fsck.
+    bb mount -t ext4 -o rw,noatime,nosuid,nodev /dev/mmcblk0p3 /home || return 1
+    bb mount -t ext4 -o rw,noatime,nosuid,nodev /dev/mmcblk0p9 /user || return 1
+    bb mkdir -p /run/pandanote-opt || return 1
+    bb mount -t ext4 -o ro,noload,nosuid,nodev /dev/mmcblk0p5 /run/pandanote-opt || return 1
+    normal_mounts post && normal_wifi_store && normal_prepare_workspace /user/pandanote
+}
+normal_runtime_ok(){
+    normal_helpers_empty && normal_partitions && normal_mounts post || return 1
+    normal_private_file /run/pandanote-normal/storage.ready || return 1
+    [ "$(bb cat /run/pandanote-normal/storage.ready)" = normal-persistent-v1 ]
+}
+normal_wifi_store(){
+    local path mode links uid rest
+    set -- $(normal_ls_fields /user)
+    [ "$#" -ge 6 ] && [ "$3" = 0 ] || return 1
+    case "$1" in d[r-][w-][x-][r-]-[x-][r-]-[x-]) ;; *) return 1;; esac
+    for path in /user/pandanote /user/pandanote/config /user/pandanote/config/wifi; do
+        if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+            bb mkdir -m 0700 "$path" || return 1
+        fi
+        [ -d "$path" ] || return 1
+        set -- $(normal_ls_fields "$path")
+        [ "$#" -ge 6 ] && [ "$1:$3" = drwx------:0 ] || return 1
+    done
+}
+normal_wifi_pointer(){
+    [ -d /tmp/pandanote-connectivity ] && [ ! -L /tmp/pandanote-connectivity ] || return 1
+    local fields
+    fields=$(normal_ls_fields /tmp/pandanote-connectivity) || return 1
+    set -- $fields
+    [ "$#" -ge 6 ] && [ "$1:$3" = drwx------:0 ] || return 1
+    [ ! -e /tmp/pandanote-connectivity/wifi-persistence ] && [ ! -L /tmp/pandanote-connectivity/wifi-persistence ] || return 1
+    (umask 077;bb printf 'schema=1\nstore=/user/pandanote/config/wifi\n' > /tmp/pandanote-connectivity/wifi-persistence) || return 1
+    normal_private_file /tmp/pandanote-connectivity/wifi-persistence
+}

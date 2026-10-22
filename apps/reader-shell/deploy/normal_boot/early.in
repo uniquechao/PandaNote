@@ -1,0 +1,27 @@
+#!/bin/sh
+# BusyBox init sysinit: never invoke stock inittab/rcS chain.
+bb(){ /bin/busybox "$@"; }
+main(){
+    [ "$#" = 0 ] && [ "$PPID" = 1 ] || return 1
+    umask 077
+    PATH=/sbin:/bin:/usr/sbin:/usr/bin;export PATH
+    unset LD_PRELOAD LD_LIBRARY_PATH ENV BASH_ENV
+    [ "$(bb sha256sum /bin/busybox | bb cut -d ' ' -f1)" = 38081195a5342faafac704f96bec8fb5b4de7a706f74dab88e5c184374f9a593 ] || return 1
+    bb mount -t proc -o nosuid,nodev,noexec proc /proc || return 1
+    # Disable helpers BEFORE sysfs, devtmpfs or any explicit driver load.
+    [ -e /proc/sys/kernel/modprobe ] && [ -e /proc/sys/kernel/hotplug ] || return 1
+    bb printf '\n' > /proc/sys/kernel/modprobe || return 1
+    bb printf '\n' > /proc/sys/kernel/hotplug || return 1
+    [ -z "$(bb cat /proc/sys/kernel/modprobe)" ] && [ -z "$(bb cat /proc/sys/kernel/hotplug)" ] || return 1
+    bb mount -t sysfs -o nosuid,nodev,noexec sysfs /sys || return 1
+    if ! bb grep -q ' /dev devtmpfs ' /proc/mounts; then bb mount -t devtmpfs -o nosuid devtmpfs /dev || return 1; fi
+    bb mount -t tmpfs -o size=20m,mode=1777,nosuid,nodev tmpfs /tmp || return 1
+    bb mount -t tmpfs -o size=4m,mode=0755,nosuid,nodev tmpfs /run || return 1
+    bb mkdir -p /dev/pts /run/pandanote-normal || return 1
+    bb chmod 0700 /run/pandanote-normal || return 1
+    bb mount -t devpts -o mode=0600,nosuid,noexec devpts /dev/pts || return 1
+    bb ifconfig lo 127.0.0.1 up || return 1
+    (cd @SYSTEM@ && bb sha256sum -c SHA256SUMS) >/dev/null 2>&1 || return 1
+    bb printf '%s\n' @BOOT_ID@ > /run/pandanote-normal/early.ready
+}
+main "$@"

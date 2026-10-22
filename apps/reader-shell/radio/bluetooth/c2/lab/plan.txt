@@ -1,0 +1,35 @@
+C2 offline runtime checkpoint — 2026-10-21
+
+No reader, HCI, USB, GPIO, radio, live service or credential access. Reuse the
+immutable C1 lab image and pinned target runtime, network none, readonly root,
+UID65534, all capabilities dropped, no host mounts/devices/ports, 32 PIDs,
+128 MiB memory plus swap, one CPU, no-new-privileges, bounded noexec tmpfs.
+Every MIPS execution enters qemu-mipsel -strace in that disposable lab only.
+No execution of target/vendor code on macOS or in the trusted compiler.
+
+First prerequisite: actual Linux C2 core fork/fexecve/wait semantics under QEMU.
+The production main requires UID0; the lab must demonstrate its actual refusal,
+without fake geteuid, changing UID/capabilities or relaxing production checks.
+A separate fixed lab entry links the SAME core.o and uses UID65534-owned fixtures.
+It hashes and opens the pinned C1 daemon, spawns --version with the production
+c2_spawn(), waits a finite deadline and calls actual c2_stop(). The runner must
+independently bind output, syscall trace and status. A successful core spawn must
+produce actual version5.87; mere child creation or exit126 is NOT success.
+
+If nested target fexecve is supported, refactor only lifecycle orchestration into
+a shared object and test it through a separate explicit lab entry using fixed
+synthetic UID65534 EXTERNAL policy. Production main stays UID0 and fixed inputs.
+Prove actual bus authentication, BlueZ owner identity/missing-MGMT error and
+cleanup. Malformed/oversize/changed-owner cases require separate synthetic peers
+and remain clearly distinct from actual BlueZ startup.
+
+If nested fexecve is unsupported, preserve its exact failure as a lab prerequisite
+blocker; do not replace production exec with QEMU paths, host callbacks or fake
+success. Record what execution boundary must be extended and stop C2 checkpoint
+before implementing an unverified long-lived GATT service. Existing pure policy
+and later transport design are not evidence of active Bluetooth functionality.
+
+Future persistent state/file paths must be explicit private configurable roots,
+validated nofollow/ownership/mode, with bounded owned finalization and no factory
+path assumptions. Temporary offline fixtures remain selfcontained. This offline
+checkpoint does not change current Qt/radio/manager/stager/kernel/installer pins.

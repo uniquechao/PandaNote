@@ -1,0 +1,3 @@
+# Preserve the exact upstream license/readme bytes recorded in provenance.
+LICENSE_Apache2.txt whitespace=-trailing-space
+README.txt whitespace=-blank-at-eof

@@ -1,0 +1,131 @@
+PandaNote 966U2 home panel content package — schema 1 (2026-10-20)
+
+A package is an immutable directory containing exactly three regular, non-symlink
+files: content.ini, background.png, SHA256SUMS. Publish/receive into a new staging
+directory; never modify a directory while loadContent reads it. A caller retains
+the old directory until display consumers release its background. This reader
+atomically updates *out only after the whole package passes validation.
+
+content.ini is UTF-8 (ASCII keys and canonical base64 values), <=131072 bytes.
+Use QSettings::IniFormat, setIniCodec("UTF-8"). All free text is UTF-8 encoded
+then RFC4648 base64 with padding, without line breaks. This avoids QSettings
+comma/list and newline/escape ambiguities. Decode <=4096 bytes per text field;
+reject malformed/noncanonical base64, invalid UTF-8, embedded NUL. Empty summary
+and location are legal. A 4095-byte / 1365-character Chinese title is legal; the
+UI must wrap/elide it and supply its own empty-title fallback.
+
+Only these sections and keys are legal; duplicate sections/keys are rejected.
+All numbers except endpoint UTC offsets are unsigned canonical decimal without
+a plus sign, whitespace or leading zero (except 0). Endpoint UTC offsets use
+canonical signed decimal seconds matching 0|-?[1-9][0-9]*; no +, -0, leading
+zero or whitespace. Range is -50400..50400 (inclusive). schema=1.
+Epochs are UTC seconds, [946684800,4133980800)
+(2000-01-01 through 2100-12-31). count events 0..200; count days 1..9.
+Date values are typed ISO yyyy-MM-dd, not free text. allDay is exactly 0 or 1.
+
+[content]
+schema=1
+version=<base64 UTF-8 nonempty opaque version, max4096 decoded bytes>
+generatedAt=<epoch of this snapshot; a cached value is NOT a live time anchor>
+displayTimezone=<base64 IANA name supplied by manager, nonempty, max128 bytes>
+background=YmFja2dyb3VuZC5wbmc=
+
+[events]
+count=N
+[event000] through [eventNNN], exactly N groups, zero-based 3-digit indices
+id=<base64 nonempty unique ID>
+summary=<base64, may be empty>
+startEpoch=<UTC epoch>
+endEpoch=<UTC epoch, strictly greater than start>
+startDate=<manager-computed date in displayTimezone>
+endDate=<manager-computed date in displayTimezone>
+startUtcOffsetSeconds=<signed UTC offset at startEpoch in displayTimezone>
+endUtcOffsetSeconds=<signed UTC offset at endEpoch in displayTimezone>
+startDisplay=<base64 manager-formatted local display text, nonempty>
+endDisplay=<base64 manager-formatted local display text; may be empty>
+allDay=0|1
+location=<base64, may be empty>
+
+Producer ordering invariant: serialize event000.. in ascending startEpoch,
+then ascending decoded ID (case-sensitive UTF-16 code-unit lexical order,
+matching QString comparison; no locale collation or normalization).
+The full schedule page preserves serialized order; the reader does not reject
+or reorder otherwise-valid unsorted packages. Home selection sorts separately.
+The manager must merge selected calendars, expand recurrences and deduplicate
+IDs before this final sort and immutable publication. Manager Task 1 integration
+must regress unsorted multi-calendar input and equal-start ID ties, verifying
+chronological full-agenda pagination as well as the emitted package order.
+Existing hand-built reader fixtures may intentionally be unsorted; they test
+consumer validation/selection, not conformance of a production producer.
+
+[days]
+count=D
+[day000] through [dayDDD], exactly D groups, zero-based 3-digit indices
+date=<manager-computed local date>
+startEpoch=<UTC instant of local midnight>
+endEpoch=<UTC instant of next local midnight, exclusive>
+
+The day table is contiguous in epoch and date, with 20..28 hour days, covering
+only the current/query display window; it is not an event-duration limit.
+Events may start before or end after the table. Keep original epochs and dates,
+including already-running events longer than nine days; never clip or drop them.
+The manager computes each endpoint's UTC offset independently (DST may differ).
+The reader validates localDate by Gregorian arithmetic on epoch+utcOffsetSeconds;
+it does not look up IANA rules or use the system timezone. Endpoint dates inside
+the table (and its final exclusive boundary) must also agree with the table.
+All-day endpoints must be local midnight under their own offsets; if within the
+table they must match its actual midnight boundary. The all-day end date is
+exclusive and strictly after its start date. These checks preserve local date
+semantics while bounded endpoint metadata supports arbitrarily long events
+within the protocol's existing epoch range.
+The manager expands recurrences; cancelled/deleted events disappear in the next
+complete snapshot, including a valid count=0 snapshot. No incremental merging.
+
+background.png is a decoded PNG of exactly 480x800, <=2097152 compressed bytes.
+The filename is fixed: no user path, absolute path, traversal, URL or command.
+PNG IHDR dimensions are checked before image decode; whole image must decode.
+
+SHA256SUMS is <=512 bytes, ASCII, exactly two lines in this order, no BOM:
+<64 lowercase hex SHA-256 of exact content.ini bytes>  content.ini\n
+<64 lowercase hex SHA-256 of exact background.png bytes>  background.png\n
+(Here \n denotes one LF, not two literal characters.) Manifest hashes establish
+integrity only. They do not authenticate a device/server or authorize syncing.
+Authentication belongs to the separately authenticated transfer/install channel.
+JSON is for manager/bridge only; the reader does not evaluate JSON or scripts.
+Vendored SHA-256 provenance and public-domain license: reader-shell/third_party/
+sha256/{provenance.json,README.md}; tested against independent standard vectors.
+
+Frozen Qt4/C++98 interfaces for subsequent tasks:
+  EventTime { qint64 epoch; QDate localDate; QString display;
+              int utcOffsetSeconds; }
+  Event { QString id, summary; EventTime start, end; bool allDay; QString location; }
+  LocalDay { QDate date; qint64 startEpoch, endEpoch; }
+  Content { int schema; QString version; qint64 generatedAt;
+            QString displayTimezone; QList<Event> events; QString background;
+            QList<LocalDay> localDays; }
+  bool loadContent(const QString &directory, Content *out, QString *error);
+  QDate localDateAtEpoch(const Content &, qint64 epoch);
+  QList<Event> selectUpcomingEvents(const Content &, qint64 nowEpoch,
+                                   const QDate &localDate);
+  class TimeAnchor { bool establish(qint64 serverEpoch); void invalidate();
+                     bool nowEpoch(qint64 *out) const; };
+
+Content.background is the accepted canonical absolute PNG path. Caller supplies
+an immutable staged directory. Failure leaves Content completely untouched and
+returns a diagnostic in error; success clears error. Null out is rejected.
+localDateAtEpoch returns invalid outside the table (never UTC date or RTC).
+selectUpcomingEvents returns no events if date/time is unavailable or the table
+cannot verify the supplied date. It selects today's not-yet-ended overlapping
+events; ongoing first, then start epoch and ID for deterministic ties; max3.
+If none remain today, returns the single earliest future event, with its local
+date for UI. Timed event end is exclusive; all-day local end date is exclusive.
+
+TimeAnchor.establish accepts a fresh trusted server UTC epoch and starts a
+QElapsedTimer monotonic anchor; nowEpoch adds elapsed seconds without modifying
+the system clock. Cached generatedAt must NEVER automatically establish an
+anchor. After process restart, before a fresh trusted response, or outside the
+day table, UI displays cached-time state and last successful snapshot time; it
+must not label the device's 1970 RTC as today. Cache is still displayable.
+
+Fixed fixtures live in fixtures/. tests/make_fixtures.py documents their
+independent construction and intentional invalid cases; it is not production.

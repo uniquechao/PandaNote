@@ -1,0 +1,29 @@
+C6 separate explicit owned H4 + C4 session candidate; no hardware execution by worker.
+
+Entry --enable-owned-transport ABS_PRIVATE_INBOX. C5 remains immutable five seconds.
+Only exact stock btattach and exact reviewed C4 artifact are fexecve children.
+Hold transport.lock throughout; independent lifecycle.lock is left to C4.
+Do not claim/delete/adopt pre-existing attach evidence. New attach-session/ must be empty.
+C5 attach/ need not be erased: operator archives ended C5 evidence explicitly before first C6.
+C6 requires attach/ empty or absent before action (metadata only), preserving existing evidence.
+
+Before attach: copied exact C5 root/tmpfs/module/UART/no-console/no-open-FD/no-HCI
+preflight and exact input hashes; check C4 artifact, private runtime and log inputs.
+Attach readiness: live owned child, exactly one hci0 controller (hci0:HANDLE connection objects allowed), expected observed address and exact initial name AIC8820 or PandaNote 966U2,
+owned child has ttyS3 char4:67 FD. This is causal-session evidence, not kernel UART ancestry proof.
+Start C4 only after that condition. Exact C4 verifies private bus peer credentials,
+BlueZ owner PID and /org/bluez/hci0 Adapter1/GattManager1/LEAdvertisingManager1 before C3.
+No claim that interface presence alone proves on-air LE/encryption/iPhone acceptance.
+
+No startup power, module, GPIO, rfkill, firmware, stock script or network mutation.
+Long-lived until explicit TERM/INT or owned child/readiness failure; no restart loop.
+C4 first graceful 12000ms cleanup budget, then force-stop if needed; forced C4 means
+cleanup unproven -> exit6. Only after C4 stop attempt, stop/reap attach 500ms then KILL1s.
+Never signal arbitrary PID, adopt from disk, kill groups, delete locks/logs or global HCI.
+C4 child still owns bus/BlueZ/C3; its existing PDEATHSIG rules stay exact.
+Normal stop requires C4 exit0 and both children reaped, else fail closed.
+Logs retained, private0600 bounded. Kernel D-state is outside absolute deadline guarantee.
+
+Offline proof: own actual Linux subprocess fixtures in existing immutable isolated lab;
+RED stub returns3 to fail normal-stop expected0, then GREEN real runner lifecycle cases.
+Target compile only; actual HCI/BlueZ/native/phone behavior remains root hardware gate.

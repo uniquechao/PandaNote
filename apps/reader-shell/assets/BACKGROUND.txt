@@ -1,0 +1,2 @@
+Original project-owned grayscale geometric landscape, generated for reader-shell.
+480x800 grayscale PNG; no external imagery. See tests/make_background.py for reproducible source.

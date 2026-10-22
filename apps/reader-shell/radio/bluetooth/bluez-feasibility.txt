@@ -1,0 +1,85 @@
+Maintained daemon feasibility checkpoint — no daemon built or executed
+
+Pinned official release: BlueZ5.87 from kernel.org; archive2318516bytes,
+SHA25626bdcf2cebd7310c6f598850606b037ef0c515fe6608ebc54d22c50c4c32b35f.
+The index lists this2026-07 release as latest at inspection. Source was fetched
+through TLS and locally hashed; no detached-signature verification was done.
+Archive is retained in ignored build/, source file digests/excerpts committed.
+GPL-2.0-or-later daemon source/license must accompany a distributed binary;
+no BlueZ code has been copied into the owned policy/probe code in this checkpoint.
+
+Actual configure.ac requires GLib>=2.36 and D-Bus>=1.10. Read-only original image
+contains libglib-2.0.so.0.6200.4(2.62.4 filename) and libdbus1.12.16(embedded version).
+Minimum version checks are plausible; they do not prove ABI or symbol linkage.
+GLib depends on stock libpcre.so.1/libpthread/libc; D-Bus on pthread/libc. New
+bluetoothd must be linked to the actual audited stock transitive runtime, not a
+new-toolchain libc. Existing compiler has no established GLib/D-Bus target header
+sysroot; do not silently use native64-bit glibconfig.h or dbus-arch-deps.h.
+
+Concrete next build sequence
+1. Obtain/pin official GLib2.62.4 and D-Bus1.12.16 development sources. Generate
+   and inspect target32-bit MIPS(o32, little endian, fp64, NaN2008) config/arch
+   headers in a unique compiler workspace; compiler/configure checks are trusted
+   source activity, never execution of any original vendor ELF. Pin input libs,
+   headers, generated config and toolchain version. No global package installation.
+2. Use configure_argv in bluez-build-plan.json. --localstatedir is explicitly
+   /tmp/pandanote-connectivity/bluetooth/var, yielding STORAGEDIR
+   /tmp/pandanote-connectivity/bluetooth/var/lib/bluetooth. Source compile-time option,
+   no binary string patch, root remount, global config edit, namespace or bind mount.
+3. Build only src/bluetoothd. Disable audio/classic profiles/network/HID/HOG,
+   LE audio profiles, mesh/MIDI/OBEX/NFC, clients/tools/monitor, udev/CUPS/systemd,
+   external plugins, experimental/deprecated/testing and datafile installation.
+   Mesh/BTP disabled means no ELL dependency. Upstream still compiles some shared
+   media/profile source unconditionally; flags do not imply zero audio code size.
+   Runtime whitelist --plugin=gap keeps autopair/hostname/policy and other unused
+   builtins inactive. Core GATT database/advertising manager are daemon facilities.
+4. Use reviewed startup/link method, stock dynamic loader, strict undefined-symbol
+   linking, ELF/ABI/version/import inspection. Prove no modern-glibc dependency,
+   no unexpected plugin load path, exact STORAGEDIR/configdir/runtime dependencies.
+   Generate fresh provenance and size evidence. Minimum-version checks alone are
+   insufficient; no target binary or link success is currently claimed.
+5. Offline sample execution only in the verified disposable immutable lab with
+   network none/noUSB/devices/host mounts/nonroot/read-only/no caps/no-new-privileges,
+   snapshot/monitoring before entry, bounded external timeout and per-child cleanup.
+   Use strace before daemon; validate every attempted storage/config access stays
+   volatile/readonly as intended, private bus only, no activation or external peers.
+6. Controller rechecks guard/memory/current UART/GPIO ownership. Private bus socket
+   lives under0700 tmpfs. Dedicated config only EXTERNAL auth and intended UID,
+   no servicedir/includes/system activation, no public socket. Launch foreground
+   exact owned children, readiness timeout10s; shutdown agent/GATT first, daemon
+   then bus with bounded TERM/wait/KILL of owned PIDs only. Do not use pidof/killall
+   or stock start/stop scripts. Never create a ready marker on process-exists alone.
+7. Adapter must expose GattManager1 and LEAdvertisingManager1, register application
+   and advertisement, prove protected ATT operations and actual numeric approval.
+   Controller measures RSS, tmpfs, kernel/driver memory with unchanged mem64M/CMA;
+   source file lengths and a minimum free-memory threshold are not sufficiency proof.
+
+Old-kernel boundary
+The README4.9 minimum occurs under 'Kernel Build Options(for Mesh)', which is
+explicitly disabled. Core adapter initialization checks MGMT major>=1 and several
+new features have MGMT-version gates. This is promising static compatibility for
+4.4.94, not target execution proof. Our standalone probe gathers actual controller
+and kernel support after separately reviewed initialization. Subsequent daemon,
+GATT registration/security, kernel crypto and phone behavior still require tests.
+
+Stock initialization static proof
+The reconstructed non-boot kernel ELF has builtin hci_uart/H4/socket init/functions,
+so stock firmware does not require a separate hci_uart.ko. The btlpm module depends
+on aic8800_bsp and registers rfkill initially software-blocked; its callback invokes
+aicbsp_set_subsys(0, blocked?0:1). Thus rfkill writes trigger shared BSP behavior and
+are not a passive permission change. Stock script also resets PE24/PD31/PA7/PC8;
+BSP originally configures shared PB20/PB19/PE24/PA07/PD31/PD30. No such operation
+was executed here. Root must review shared Wi-Fi ownership before BT activation.
+Stock script then uses btattach -S1500000 -B/dev/ttyS3(H4 default), rfkill unblocks
+and hciconfig up. Our code does not reproduce this chain. BSP firmware remains
+pinned read-only /module_driver/firmware; hardware chip/revision must come from
+actual controller local-version/features and BSP's already-reviewed probe logs,
+not filename guesses. No firmware/driver image or memory layout change is proposed.
+
+Stock daemon evidence
+Embedded version5.54,951060B,SHA36c9dc74b0241eb9f82ae256ef5181ef0e588534eb2a1ed03eaadbdf309ad598.
+Stock options/source show no verified runtime storage-directory override; many
+compiled /var/lib/bluetooth paths exist. Private D-Bus address alone is insufficient.
+A vendor fork cannot be ruled out from upstream source/strings, so the conclusion
+is no verified safe stock override, not an exhaustive binary proof of absence.
+No stock --help/version/daemon command was executed on host/compiler or device.

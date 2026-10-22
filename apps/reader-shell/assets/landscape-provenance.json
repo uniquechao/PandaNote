@@ -1,0 +1,16 @@
+{
+  "asset": "landscape-background.png",
+  "generator": "built-in image_gen",
+  "project_source": "designs/ink-ui-v2/landscape-20261022/landscape-source-v2.png",
+  "source_sha256": "fab8ca39a2a555d14902146576ba42d0b68fe03724d2248f0a7159ad41620cbf",
+  "asset_sha256": "38c9b066da3614c45e153d6779abaa53fda4a1c8d3bf1398a43a290aca03bb33",
+  "asset_bytes": 384002,
+  "size": [
+    480,
+    800
+  ],
+  "conversion": "sips -z 800 480; proportional device-size adaptation",
+  "prompt": "Portrait 3:5 monochrome Chinese shanshui on pure white: pale mountains at far right, compact pine and rocky shoreline at lower right, quiet river, low distant islands and a tiny boat near lower left; clean white top22 percent and left72 percent through84 percent height for real date and five event rows; no text, seals, signature, UI, bezel, perspective or paper texture. Edit generationv1 only to shrink/shift pine right so dark branches stay in rightmost25 percent above85 percent height, preserving landscape and boat.",
+  "generated_typography": false,
+  "decode_policy": "once at ReaderShell construction; immutable packaged asset; invalid dimensions use white fallback"
+}

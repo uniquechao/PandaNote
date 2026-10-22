@@ -1,0 +1,137 @@
+[
+  {
+    "name": "starlette",
+    "version": "0.46.2",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "click",
+    "version": "8.5.0",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "icalendar",
+    "version": "7.3.0",
+    "license": "BSD-2-Clause"
+  },
+  {
+    "name": "packaging",
+    "version": "26.3",
+    "license": "Apache-2.0 OR BSD-2-Clause"
+  },
+  {
+    "name": "Pygments",
+    "version": "2.21.0",
+    "license": "BSD-2-Clause"
+  },
+  {
+    "name": "defusedxml",
+    "version": "0.7.1",
+    "license": "PSFL"
+  },
+  {
+    "name": "pip",
+    "version": "24.0",
+    "license": "MIT"
+  },
+  {
+    "name": "iniconfig",
+    "version": "2.3.1",
+    "license": "MIT"
+  },
+  {
+    "name": "tzdata",
+    "version": "2026.5",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "pluggy",
+    "version": "1.7.0",
+    "license": "MIT"
+  },
+  {
+    "name": "recurring-ical-events",
+    "version": "3.8.2",
+    "license": "LGPL-3.0-or-later"
+  },
+  {
+    "name": "h11",
+    "version": "0.16.0",
+    "license": "MIT"
+  },
+  {
+    "name": "pydantic_core",
+    "version": "2.50.1",
+    "license": "MIT"
+  },
+  {
+    "name": "setuptools",
+    "version": "79.0.1",
+    "license": "See upstream metadata"
+  },
+  {
+    "name": "x-wr-timezone",
+    "version": "2.0.1",
+    "license": "LGPL-3.0-or-later"
+  },
+  {
+    "name": "python-dateutil",
+    "version": "2.9.0.post0",
+    "license": "Dual License"
+  },
+  {
+    "name": "pytest",
+    "version": "8.4.2",
+    "license": "MIT"
+  },
+  {
+    "name": "fastapi",
+    "version": "0.115.12",
+    "license": "See upstream metadata"
+  },
+  {
+    "name": "annotated-types",
+    "version": "0.8.0",
+    "license": "MIT"
+  },
+  {
+    "name": "typing-inspection",
+    "version": "0.4.4",
+    "license": "MIT"
+  },
+  {
+    "name": "typing_extensions",
+    "version": "4.16.0",
+    "license": "PSF-2.0"
+  },
+  {
+    "name": "pillow",
+    "version": "11.3.0",
+    "license": "MIT-CMU"
+  },
+  {
+    "name": "pydantic",
+    "version": "2.14.1",
+    "license": "MIT"
+  },
+  {
+    "name": "uvicorn",
+    "version": "0.34.3",
+    "license": "BSD-3-Clause"
+  },
+  {
+    "name": "anyio",
+    "version": "4.15.1",
+    "license": "MIT"
+  },
+  {
+    "name": "six",
+    "version": "1.17.0",
+    "license": "MIT"
+  },
+  {
+    "name": "idna",
+    "version": "3.20",
+    "license": "BSD-3-Clause"
+  }
+]

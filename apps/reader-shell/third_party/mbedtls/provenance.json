@@ -1,0 +1,9 @@
+{
+ "release":"3.6.7",
+ "source":"https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2",
+ "sha256":"a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6",
+ "checksumSource":"https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7-sha256sum.txt",
+ "checksumFileSha256":"7a9caa41bceabbbf4d3cbf6819d44440edb4f608ce2d5bc589eaa280e910da34",
+ "license":"Apache-2.0 OR GPL-2.0-or-later",
+ "execution":"Source compiled only, no MbedTLS or vendor sample executed in trusted compiler. Linked tests only in reviewed disposable offline container."
+}

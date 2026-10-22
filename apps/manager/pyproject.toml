@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pandanote-local-manager"
+version = "0.1.0"
+description = "Local immutable content producer for PandaNote 966U2"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["Pillow==11.3.0", "fastapi==0.115.12", "uvicorn==0.34.3"]
+
+[project.optional-dependencies]
+test = ["pytest==8.4.2"]
+
+[tool.setuptools]
+packages = ["manager"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--basetemp=build/pytest -p no:cacheprovider"
+
+[tool.setuptools.package-data]
+manager = ["static/*", "static/assets/*"]

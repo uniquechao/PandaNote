@@ -1,0 +1,100 @@
+Mac calendar bridge / manager normalization contract — schema 1 (2026-10-20)
+
+This is manager JSON, not the frozen reader INI protocol. No actual EventKit
+access or permission request is implemented by manager Task1.
+
+All successful actions return JSON objects with schema:1 and ok:true. Failures
+return schema:1, ok:false, error:{code:string,message:string}; never events on
+failure. Successful source reads are authoritative full snapshots, including
+empty events. Transport/process/permission failure is never an empty snapshot.
+An unavailable Task2 provider reports code:"bridge_unavailable" truthfully.
+
+Actions (Task3 implements read-only EventKit and verifies extraction against SDK):
+  status -> {schema:1,ok:true,authorization:"not_determined"|"authorized"|
+             "denied"|"restricted"|"unavailable"}
+  request-access -> same status shape; invoked ONLY from explicit Connect action.
+  calendars -> {schema:1,ok:true,calendars:[{id:string,title:string}]}
+  export input -> {schema:1,calendarIds:[string],displayTimezone:IANA-name,
+                   windowStartDate:"yyyy-MM-dd",dayCount:1..9,
+                   startEpoch:integer,endEpoch:integer}
+  export success -> {schema:1,ok:true,readAt:UTC-seconds,
+                     calendarIds:[available selected IDs],
+                     missingCalendarIds:[requested unavailable IDs],events:[...]}
+  watch -> bounded read-only newline-delimited {schema:1,changed:true} signals.
+           No event details; manager owns/stops child and debounces sync.
+           Watch/startup/timer NEVER requests access. No system resident install.
+Input/output via structured stdin JSON or limited IPC; process argv arrays,
+never shell interpolation. Calendar IDs are opaque data, not resource paths.
+
+Each event is EXACTLY these six common fields plus two endpoint fields:
+  id: nonempty Unicode string, globally unique per calendar/occurrence,
+  calendarId: nonempty source calendar ID,
+  summary: UTF-8 string (empty allowed), location: UTF-8 string (empty allowed),
+  allDay: JSON boolean, sourceTimezone: original source timezone name or null.
+Timed: startEpoch/endEpoch are integral UTC Unix seconds; end > start.
+       Preserve sourceTimezone metadata, including null for floating sources.
+All-day: startDate/endDate are floating yyyy-MM-dd dates, end exclusive and
+         strictly later. No UTC endpoint fields: extract dates in original
+         event/calendar date semantics BEFORE any display-zone conversion.
+         Changing selected displayTimezone must NEVER shift these dates.
+No attendees, organizer, notes, URLs, conference data or private calendar fields.
+All text <=4096 UTF-8 bytes, no NUL or invalid Unicode; sourceTimezone <=128 bytes.
+Timed epoch reader range [946684800,4133980800). No truncation to query window.
+Bridge expands recurrence instances, removes cancellation/deletion, and supplies
+stable per-instance IDs (recommended SHA-256 of unambiguous calendar ID, stable
+source event ID and original occurrence identity). A changed occurrence retains
+identity where source API permits. It does not leak private fields into IDs.
+Manager deduplicates equal IDs only if their normalized reader fields agree;
+conflicting duplicate IDs fail the complete publication. It merges all selected
+calendars, sorts by startEpoch then ID UTF-16 code units (QString, case-sensitive,
+no normalization/collation); Python Unicode scalar ordering is insufficient.
+
+Window is local midnight of windowStartDate through dayCount days later in
+selected display IANA timezone, end exclusive; default dayCount=7. Include
+start < endEpoch AND end > startEpoch, including long already-running events.
+For all-day overlap, use floating dates against the local date window, not an
+unrelated UTC projection. A bridge must retrieve these events before manager
+filtering; the manager cannot recover events a bridge query omitted.
+
+Manager accepts exactly the event dicts above via normalize_events / Store.
+It derives each timed endpoint date AND UTC offset independently in display
+zone (DST can differ). All-day floating dates become local midnight in selected
+display zone. Impossible local midnight, unsupported offsets/ranges/day lengths,
+>200 included events, >128KiB INI or invalid fields fail before current changes.
+Never clip endpoints; 1..9 day table bounds only the display/query window.
+
+Python interfaces for Tasks2/4:
+  Settings(display_timezone:str,window_start:datetime.date,day_count:int=7,
+           selected_calendar_ids:tuple[str,...]=()) [immutable]
+  Settings.to_dict()/from_dict() use snake_case, ISO window_start and ID list.
+  Store(root:Path) [explicit injection; constructor/import/load absent are inert]
+  Store.publish_snapshot(events:list[dict],settings:Settings,background:bytes,
+                         *,generated_at:int|None=None) -> PublishedContent
+  Store.load_current() -> PublishedContent|None
+  Store.load_version(server_version:str) -> immutable Path (32 lowercase hex)
+  Store.save_settings(settings)/load_settings() -> Settings|None
+  Store.record_successful_read(epoch)/last_successful_read() -> int|None
+  PublishedContent(version,directory:Path,generated_at,content_digest),
+                   .background -> immutable directory/background.png
+  normalize_background(source:bytes,crop:Crop) -> normalized PNG bytes
+  Crop(x=0,y=0,width=None,height=None,mime_type="image/png") [immutable]
+Crop uses source pixels AFTER EXIF orientation. Omitted dimensions select center
+cover; explicit integer rectangle must fit source, resized to480x800. HTTP must
+pass actual upload MIME. Only PNG/JPEG <=10MiB, <=20MP before decode. Alpha is
+composited over white, output grayscale PNG <=2MiB. Filenames never enter paths.
+Store accepts normalized grayscale bytes only; preview/download use the SAME
+PublishedContent directory, not independent current/background lookups.
+
+Storage selection/config live in root/state.sqlite3; packages root/versions/<id>.
+Generate/fsync full three-member directory, rename/fsync, commit selection last.
+Failure retains last good version. Old directories are retained indefinitely:
+no pruning is implemented, so active preview/consumer lifetime is preserved.
+A later lifecycle-aware GC must track every consumer before reclaiming versions.
+Byte-identical reader payload retains version/generated_at despite polling;
+content digest excludes generatedAt, version, readAt and live server time.
+Different local-day window or reader payload/background legitimately republishes.
+Record readAt only after authoritative successful bridge export. A missing
+selected calendar removes its events on next successful full publication while
+its saved ID remains recoverable; errors preserve data and surface status.
+Current server time is computed fresh by the future HTTP response and must
+NEVER be inferred from generated_at or last_successful_read. No task1 API exists.

@@ -1,0 +1,105 @@
+C4 long-lived private Bluetooth supervisor — review candidate, NOT activated
+
+CLI (root, explicitly enabled):
+  pandanote-bt-supervisor.mipsel --enable-private-session ABS_PRIVATE_INBOX
+Without that exact option and third argument, returns2 before opening runtime.
+C3 direct interface and phone/Qt wire protocol are unchanged.
+
+C4 source baseline: frozen6254ce7; central C1-C3 base3c8e72f unchanged.
+Only c4/** source/evidence changed by this candidate.
+Bindings:
+  C1 BlueZ SHA df339547c56d352f50b609a487b062903cdc97e9ba23eb456114b5b87ec4f449
+  stock D-Bus SHA 9b3734b1d4e7a204802ecbc667d78d3a0fae4a93cba8ae81bcb4155fdc20e46b
+  C3 CLI SHA 7701d4ceb9677dba51a0f5c17ad18610af7efcde4f1f79fb40ccaf5f6a389688
+  C3 manifest SHA fae9c7e3b3c5da869b37b7307c915959c4adb18940a0ab1a29e7a1af61427b63
+C4 build verifies exact unchanged C2/adapter/startup/header/runtime sources.
+C4 runtime verifies opened executable digests and exact C3 size before fexecve;
+checks retained direct libraries and SONAME aliases by SHA and device/inode.
+
+Runtime root remains the exact reviewed C1 layout:
+  /tmp/pandanote-connectivity/bluetooth
+/tmp must be tmpfs. Parent/controller/resource approval and staged exact inputs
+are prerequisites; C4 neither uploads firmware nor initializes controller HCI.
+Ancestor directories and runtime dirs are root-owned0700. Keep unrelated Wi-Fi
+parent contents untouched. Root/bin/bluetoothd and root/bin/pandanote-bt-service must
+already exist root-owned0700 regular single-link exact binaries. D-Bus stays
+/usr/bin/dbus-daemon root0755. C4 does not install or change these inputs.
+root/lifecycle.lock0600 is held exclusively throughout child lifetime+cleanup.
+No daemon PID file or existing service is adopted. run/, etc/, service/ and
+var/lib/bluetooth/ must initially be empty; any stale content fails closed.
+Staged bin/ and lifecycle.lock remain for another explicit invocation.
+
+Inbox is an explicit existing absolute root-owned0700 directory; each component
+is walked with nofollow, no dot/empty/trailing component, no writable ancestor
+except root/tmp1777; final filesystem must be writable with at least1MiB free.
+Recommended integration input after storage-profile validation:
+  /user/pandanote/content/inbox
+No hardcoded persistence-to-/tmp restriction. No inbox book is erased by C4;
+only C3's existing bounded/owned file finalization writes received files there.
+BlueZ keys under C1's tmp root are STILL VOLATILE. This C4 does not claim reboot
+bond persistence; that needs a separately reviewed new C1 state-path profile.
+
+Native Qt launch integrates through explicit:
+  --bluetooth-ipc /tmp/pandanote-connectivity/bluetooth/service/local.sock
+Socket0600, private runtime0700, sameUID; request24/reply48+EOF SOCK_STREAM.
+UI can poll/confirm/deny/cancel and consume+ACK effects using the frozen C3
+contract. C4 only sends op2 polls, never opens pairing windows, grants permission,
+consumes effects or synthesizes CONTROL. C4 does not modify Qt/phone code.
+
+Startup sequence:
+1. private D-Bus nofork/nopidfile/nosyslog with exact C1 private-bus.conf;
+   authenticated Hello plus SO_PEERCRED UID and PID of owned bus child.
+2. exact C1 BlueZ foreground/plugin=gap/main.conf; inspect hci0 Adapter/GATT/
+   advertising managers; bind unique org.bluez name+UnixPID to owned daemon.
+3. exact C3 --serve-private OWNED_BLUEZ_PID ROOT/service ABS_PRIVATE_INBOX;
+   observe its same-inode0700 bind construction state without changing mode;
+   wait for C3-owned0600 then require actual bounded48B IPC op2+EOF from owned
+   C3 UnixPID. Bus permission tightening stays separate.
+Then continue until TERM/INT or child/owner/IPC health fails, polling every1s.
+No10s alarm, no cumulative8s CPU cap, no auto restart. CPU limits must already be
+unlimited, otherwise preflight rejects. Parent memory soft12/hard64MiB; children
+bus16/daemon24/C316MiB AS, stack512KiB, FD32, core0. Actual combined reader RSS,
+wireless coexistence and performance remain device gates; caps are not proof.
+
+Logs go only to new private0600 files. Bus/daemon RLIMIT_FSIZE16KiB; C3 file/log
+256KiB (same as accepted max file). Logs are bounded by terminating/failing a
+child that exhausts the cap; there is no rotation or silent unbounded logging.
+The sanitized parent line reports stage/exit/ready/reaped/cleanup, no peer/nonce.
+
+Failure/stop owns exact fork child handles only. Reverse service→BlueZ→bus,
+C34s graceful unregister, BlueZ1s, bus500ms; if needed KILL and up to1s reap each.
+Linux parent-death SIGKILL with a captured-PID race check prevents orphaned
+children if the supervisor is fatally terminated; abrupt death preserves stale
+files and requires inspection rather than automatic adoption/cleanup.
+No killall/pkill/killpg/global dbus/radio scripts. Only after every started child
+is reaped: remove recorded same-inode sockets, own same-inode config/log files,
+and bounded initially-empty state/service descendants. Unknown ownership/mode,
+symlink/inode swap/mount/quota/stale socket preserves remaining evidence with
+exit6. Inbox, bin, lifecycle.lock and unrelated processes are never cleaned.
+
+Exits:2 disabled/usage;3 precondition/core plan;4 startup/child/health failure;
+6 incomplete cleanup;7 cancelled during startup;0 requested stop after running.
+SIGTERM/SIGINT are handled as requests, not abrupt unlink permission.
+D-Bus method/IPC operations have explicit finite budgets. Initial stock libdbus
+open_private authentication is synchronous, inherited from exact C2, and is not
+claimed to be preemptively deadline-bounded by C4: deployment should retain an
+external startup watchdog. No untrusted/global bus endpoint is used.
+
+Evidence:
+- native-final-lifecycle: real aarch64 Linux own-code fork/fexecve/limits/wait,
+  same production c4_spawn/c4_run/c4_stop, fatal parent death also checked, nonroot isolated read-only/no-network/
+  no-device/no-host-mount approved lab;9 cases, unrelated sentinel preserved.
+- target-manifest/target-elf: strict retained MIPS o32/NaN2008/FP64 compile/link,
+  no target execution. Retained old QEMU nestedexec ENOEXEC remains unresolved;
+  no fakegeteuid or altered isolation was used to manufacture target success.
+- Native fixtures use simulated readiness callbacks, NOT actual BlueZ/D-Bus/
+  phone acceptance. main/session product plumbing is compile-checked only.
+- Real hardware startup, HCI/firmware, actual daemon/API readiness, foreground UI,
+  iPhone authenticated bonded link/CONTROL/FILE, resource fit, persistence and
+  stop/reboot recovery are separate integration gates owned by root task.
+
+C4fix1 regression: controlled pipes pause the actual unchanged C3 c3_ipc_open
+after bind before its0700 stat validation. Frozen6254 readiness causes0600/F/2
+RED; passive service readiness yields0700/R/0 and real owned-PID IPC GREEN.
+Wrong peer, wrong mode, inode replacement and bus tightening remain checked.
+See evidence/fix1-report.txt; original6254 capsule remains separately retained.

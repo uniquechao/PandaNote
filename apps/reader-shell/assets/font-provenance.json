@@ -1,0 +1,39 @@
+{
+  "project": "WenQuanYi Micro Hei",
+  "version": "0.2.0-beta",
+  "upstream": "https://sourceforge.net/projects/wqy/files/wqy-microhei/",
+  "mirror_commit": "cd82defe33ec0e86e628329f1b63049ef562c8e5",
+  "license": "Apache-2.0 OR GPL-3.0 with font embedding exception; selected Apache-2.0",
+  "files": [
+    {
+      "file": "wqy-microhei.ttc",
+      "url": "https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/cd82defe33ec0e86e628329f1b63049ef562c8e5/wqy-microhei.ttc",
+      "bytes": 5177387,
+      "sha256": "e4bca8df123ce01b104780f576ea1a58b9a5ff1662a91124b6d3180cb6c88212"
+    },
+    {
+      "file": "LICENSE_Apache2.txt",
+      "url": "https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/cd82defe33ec0e86e628329f1b63049ef562c8e5/LICENSE_Apache2.txt",
+      "bytes": 10319,
+      "sha256": "1c19d8eb506a0e9d501d882fc9fe94eca99bc7b2f69f5e64fa79b7ec48cee54d"
+    },
+    {
+      "file": "LICENSE_GPLv3.txt",
+      "url": "https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/cd82defe33ec0e86e628329f1b63049ef562c8e5/LICENSE_GPLv3.txt",
+      "bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "file": "README.txt",
+      "url": "https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/cd82defe33ec0e86e628329f1b63049ef562c8e5/README.txt",
+      "bytes": 20027,
+      "sha256": "9b1f9a3d90f88041387700498296fc89d6d600d0ebc9b6258c119dd192eaf6b9"
+    },
+    {
+      "file": "AUTHORS.txt",
+      "url": "https://raw.githubusercontent.com/anthonyfok/fonts-wqy-microhei/cd82defe33ec0e86e628329f1b63049ef562c8e5/AUTHORS.txt",
+      "bytes": 363560,
+      "sha256": "e980452a04c9e9dd7d6f0d8f72dd4c960f312207d64b849b73347beb02b9c3fa"
+    }
+  ]
+}

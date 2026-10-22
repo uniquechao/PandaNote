@@ -1,0 +1,42 @@
+#!/bin/sh
+# One owned foreground runtime child, supervised by the custom PID1.
+bb(){ /bin/busybox "$@"; }
+main(){
+    [ "$#" = 0 ] || exit 1
+    parent=$(bb cat "/proc/$PPID/stat") || exit 1
+    parent=${parent##*) }; set -- $parent
+    [ "$2:$3:$4" = "1:$PPID:$PPID" ] || exit 1
+    umask 077
+    PATH=/sbin:/bin:/usr/sbin:/usr/bin; HOME=/user/pandanote; TMPDIR=/tmp
+    export PATH HOME TMPDIR
+    unset LD_PRELOAD LD_LIBRARY_PATH ENV BASH_ENV
+    DEV_RUN=/tmp/pandanote-development; DEV_BB=/bin/busybox
+    DEV_MOUNTS=/proc/mounts; DEV_SWAPS=/proc/swaps
+    DEV_SYS_BLOCK=/sys/class/block; DEV_NET=/sys/class/net
+    [ -f "$DEV_RUN/policy.sh" ] && [ ! -L "$DEV_RUN/policy.sh" ] || exit 1
+    value=$(bb sha256sum "$DEV_RUN/policy.sh") || exit 1
+    [ "${value%% *}" = @POLICY_SHA@ ] || exit 1
+    . "$DEV_RUN/policy.sh"
+    if ! dev_mount_persistent || ! dev_prepare_workspace /user/pandanote ||
+       ! dev_private_directory /home/pandanote-system; then
+        dev_log storage-failed || :
+        exit 1
+    fi
+    bb sync
+    bb printf '%s\n' 'profile=writable-development-v1' 'workspace=/user/pandanote' \
+        'storage=mounted-rw' 'application=not-started' > "$DEV_RUN/storage.ready"
+    dev_log storage-ready || exit 1
+    # Display/guarded-touch/radio modules are separate exact-hash integration
+    # interfaces. No driver or native app is executed by this candidate yet.
+    trap 'dev_log profile-stopped || :; bb sync; exit 0' TERM INT
+    while :; do
+        bb sleep 1
+        if ! dev_receipt_ok || ! dev_check_partitions || ! dev_check_mounts post ||
+           ! dev_check_network || ! dev_check_listeners; then
+            bb rm -f "$DEV_RUN/storage.ready"
+            dev_log storage-failed || :
+            exit 1
+        fi
+    done
+}
+main "$@"

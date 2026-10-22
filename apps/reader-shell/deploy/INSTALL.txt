@@ -1,0 +1,104 @@
+966U2 install/rollback preparation — LOCAL CLONES ONLY
+
+Current status: BLOCKED for actual installation. The default command prints the
+exact candidate plan, including blockers, without touching a clone or device:
+
+  python3 apps/reader-shell/deploy/install.py
+  python3 apps/reader-shell/deploy/rollback.py
+
+These tools have no ADB, SSH, USB, block-device, mount, format, service, or payload
+execution capability. There is no --device flag. Do not copy them onto the reader
+and interpret clone success as a persisted boot result.
+
+Exact candidate and sources
+install-plan.json records all 27 accepted native package artifacts and hashes,
+including ELF, fonts, background, licenses/provenance. Payload candidate directory:
+  /home/pandanote-reader/versions/native-25e55d00/
+Persistent backups candidate:
+  /home/pandanote-reader/rollback/<canonical manifest SHA256>/
+Startup candidate:
+  /etc/init.d/rcS (rootfs p2), replacing only the final display dispatch.
+Its original SHA is c1de8d36f65420e27f1d15eca83c4680ea531102cefcab257358addfb9951ade.
+New startup bytes/hash and real transport are null. Accepted native libraries stay
+on p5, inherited at /opt/image/opt/Qtopia/lib; this plan never overwrites them.
+Stock rcS S?? driver initialization can invoke touch-firmware upgrade BEFORE
+the final display dispatch. Preserving that startup loop does not preserve RAM
+storage/touch guards. Audit and safe startup design are prerequisites; the exact
+rcS replacement remains null for this reason too.
+
+Runtime current content, USB-provisioned trust and independent device credential
+files need their own reviewed inventory. They must not enter this public plan.
+
+Why the entry is not an invented /overlay boot hook
+rcS first picks /opt/script or fallback /opt_orig/script and backgrounds start_qpe.
+Stock start_qpe then mounts overlay (/opt_orig lower, /overlay/system upper -> /opt)
+and runs install_product, which can format /home. p5 /script -> opt/script and
+/image -> opt/image. p4 upper /system/opt/script is absent in the acquired snapshot.
+An upper-only replacement may be invisible at the initial rcS dispatch. Do not
+run stock initialization to obtain a convenient boot path. qpeentry's internal
+supervision is unverified; a bounded normal-boot supervisor must be reviewed and
+physically tested before a new rcS hash can be frozen. RAM PID1 is not that proof.
+
+Clone API / explicit rehearsal
+Tests create a small directory within this worktree, with inert text bytes and
+marker file .pandanote-install-clone containing exactly:
+  local-filesystem-rehearsal-v1
+The marker is an opt-in label for local testing, not mount or device evidence.
+Clone roots and bundles outside this worktree, symlinks and hardlinks are refused.
+Use a separate local-clone-only manifest with exact SHA256/modes and no blockers;
+never remove blockers from install-plan.json to pretend the real candidate is ready.
+
+  python3 apps/reader-shell/deploy/install.py --manifest LOCAL_MANIFEST.json \
+    --apply-clone LOCAL_CLONE --bundle LOCAL_BUNDLE
+  python3 apps/reader-shell/deploy/rollback.py --manifest LOCAL_MANIFEST.json \
+    --apply-clone LOCAL_CLONE
+
+No verification CLI accepts self-asserted hardware proof. The Python verify_clone
+API accepts all five clone-only checks (display, touch, calendar, offline, stable)
+for deterministic harnesses; incomplete/false checks restore the old entry. All
+true changes only the local journal to clone-verified. It executes no program.
+
+Transaction and recovery
+1. Validate detached canonical manifest, worktree/clone identity, exact destination
+   paths, source hashes, old destination hashes/modes; hold exclusive clone lock.
+2. Before any target write, fsync persistent old files and same verified manifest.
+   The manifest SHA is the transaction identity. Never reuse/replace another old
+   payload: deploy to a fresh version path. Preserve the complete old rcS + mode.
+3. Fsync and atomically rename payload files first, then journal switching-entry,
+   then fsync/atomic-rename rcS, then journal awaiting-verification.
+4. A crash at any journalled step means recover before another install. Rollback
+   validates every old backup and all current target hashes first, restores entry
+   first, removes only explicitly listed newly created candidate files, fsyncs
+   each parent, and retains all old backups. Repeated rollback is safe.
+5. Missing/corrupt backup or unknown current bytes: stop without overwriting the
+   entry. Restore verified backup bytes AND original modes from trusted retained
+   source, or inspect separately. Do not delete journal or backup to bypass it.
+6. Recovery interruption: rerun rollback with the identical canonical manifest;
+   current files may be old or new, but an unknown third version always stops.
+
+Crash model and limitations
+The write-ahead journal and fsync/rename protect sequential process interruptions
+in a non-hostile exclusive local clone. Tests include os._exit after entry switch.
+This is not a general adversarial-filesystem sandbox, signed-update trust root,
+normal-boot supervisor, or proof of eMMC/cache behavior under power loss. Exact
+manifest identity is not cryptographic authenticity; review supplies provenance.
+Temporary .<filename>-* files can survive abrupt termination; they are not active
+entry files. Do not recursively delete backups/versions while recovering.
+
+Actual device gates (parent executes only after independent review/acceptance)
+- Read-only live serial/mode, p2/p3 filesystem identity, free space, current entry
+  hashes/modes, overlay precedence and retained p5 library hashes.
+- Accepted full native home/panel + real Mac calendar + authenticated on-device
+  Wi-Fi sync + offline display + touch + memory stability.
+- Safe normal-boot init/supervisor with bounded retry/timeout and last-working
+  fallback, entry-switch/boot failure tests, precise immutable payload + runtime
+  inventory, persistent backup durability, reviewed recovery transport.
+- Exact new startup hash and final storage operation list, then authorized
+  application replacement and physical reboot/home/calendar/touch evidence.
+Until those gates pass this remains local preparation. No bootloader, kernel,
+DDR, partition table, touch firmware, /user books, /private or /data modification.
+Existing backup excludes boot0/boot1/RPMB/tail; it cannot guarantee full recovery.
+Eventual whole-system erase authorization does not make this candidate ready.
+
+Focused verification
+  python3 -m unittest discover -s apps/reader-shell/deploy/tests -p test_install.py

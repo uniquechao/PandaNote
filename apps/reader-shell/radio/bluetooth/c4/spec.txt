@@ -1,0 +1,71 @@
+C4 minimum review candidate — long-lived owned private Bluetooth session
+
+Only new c4/** files. Old C1/C2/C3 sources, release pins and prior evidence stay
+frozen. No hardware, init, radio, driver, Qt, manager or installation action.
+Default invocation rejects. Explicit --enable-private-session <private-inbox>
+starts one owned private D-Bus, exact C1 BlueZ and exact reviewed C3 service,
+retains all unreaped child handles and an exclusive lifecycle lock, then watches
+until requested stop or a dependency fails. No automatic restart/adoption.
+
+C1 paths/config stay exact under /tmp/pandanote-connectivity/bluetooth. C3 IPC runtime
+is a private service/ subdirectory there. Inbox is explicit absolute owner0700
+validated storage; C4 NEVER cleans it. RW root is allowed; there is no factory-ro
+precondition. Runtime /tmp must be actual tmpfs. Persistent BlueZ keys remain a
+separate new C1 profile; this package does not relabel volatile keys as persistent.
+
+Runtime inputs are verified before startup: exact C1 BlueZ976880/df339547..., stock
+D-Bus9b3734..., reviewed C3 service75300/7701d4... and C3 manifestfae9c7...; retained
+loader/libc/GLib/D-Bus/NSS/transitive file and SONAME-alias identities. Executables
+are root-owned, nofollow regular single-link files and are hashed/opened once,
+then the SAME descriptors are fexecve'd. No PATH search or inherited loader/bus/
+credential variables. Caller owns current controller/resource/firmware approval;
+BlueZ startup/stop can configure/power hardware, even AutoEnable=false.
+
+Reuse unchanged C2 dir/file/hash/flock/alive and owned child semantics. C4 spawn
+has its own reviewed role limits because old C2 CPU8s/FSIZE16KiB hard limits
+cannot support a long-lived service or C3's256KiB files. No cumulative8CPU-second
+limit is introduced. bus/daemon log/file hard bound16KiB; C3 file/log bound256KiB.
+All children have FD32/stack512KiB/core0 and bounded address space; these virtual
+caps are NOT proof of the real reader's64MiB combined RSS or radio coexistence.
+
+Readiness is actual authenticated bus Hello, unique org.bluez owner PID matching
+our unreaped daemon plus hci0 Adapter/GATT/advertising APIs, and C3's owner-checked
+IPC poll reply on our owned service PID. Periodic child/owner/IPC health detects
+failure. Readiness files or mere socket/process existence are never phone-ready.
+
+TERM/INT or dependency failure closes only exact owned children in reverse order.
+Allow C3 bounded4s graceful unregister, then KILL/reap if needed; daemon/bus have
+finite shorter windows. Never killall/pkill/killpg, never adopt PID files. Cleanup
+starts only after ALL owned children are reaped. Remove only recorded same-inode
+private sockets and bounded owned private config/log/pairing-state descendants;
+unknown/stale socket, wrong owner/mode, mount boundary, quota or inode change is
+failure and preserved for inspection. Inbox books and unrelated processes survive.
+
+Proof plan BEFORE code:
+- Frozen reviewed C2 core hash is an input, not patched by C4.
+- Native Linux own-code fixtures execute real fork/fexecve/limits/wait/reap and
+  the SAME C4 orchestration in the established immutable nonroot/no-network/no-
+  device/no-host-mount/cap-drop/read-only lab. Compile-only in the trusted native
+  compiler image; no vendor ELF executes there or on macOS.
+- Prove steady run until requested stop, early child death/start failure, failing
+  readiness, failing health, cancellation during startup, TERM-ignoring KILL,
+  FD hygiene, role file limits, and an unrelated sentinel left alive.
+- Product identity/D-Bus plumbing gets strict MIPS compile/link and retained C3
+  protocol checks. Native fixtures are not actual BlueZ/controller acceptance.
+- Existing QEMU-user nested MIPS exec failure remains retained; do not shim it,
+  weaken isolation or manufacture a production orchestration PASS.
+
+Before final freeze, also prove unexpected supervisor death: Linux child sets
+PR_SET_PDEATHSIG SIGKILL with captured-parent-PID race check before fexecve.
+Own-code native fixture uses subreaper and verifies the orphaned owned child is
+actually SIGKILL'd, while normal lifecycle/reap tests remain unchanged. SIGKILL
+cannot clean runtime files; next startup must still reject stale state.
+
+C4fix1 narrow race regression before product change: run the actual frozen C3
+c3_ipc_open() in a child; intercept only its real post-bind fstatat scheduling
+point using pipes, without synthesizing stat results. C4's real service() probes
+while C3 is paused; then release C3 to perform its0700 validation/chmod/listen.
+Require no permission mutation, actual C3 open success and actual owned-PID
+OBT1 poll after0600, plus wrong-peer/wrong-mode/inode-replacement refusals.
+Service0700 is same-inode construction state, not ready; only bus permission
+tightening remains supervisor-owned. Old6254 candidate/artifact stay frozen.

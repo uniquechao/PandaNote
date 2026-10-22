@@ -1,0 +1,7 @@
+The startup adapter files start.S, entry.h, csu.cpp and libio-init.c are copied
+unchanged from the validated minimal-qt baseline in this project. start.S has
+its GNU glibc copyright, LGPL 2.1-or-later and unlimited linking exception in
+the source. LICENSE.LGPL and LGPL_EXCEPTION.txt accompany this copy.
+The tiny csu adapter requires no executable INIT_ARRAY/FINI_ARRAY; static
+readelf gates enforce this. _IO_stdin_used=0x20001 selects modern glibc stdio.
+Builds must preserve it in the executable dynamic symbol table.

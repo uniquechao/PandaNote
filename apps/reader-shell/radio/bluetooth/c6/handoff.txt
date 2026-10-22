@@ -1,0 +1,91 @@
+C6 owned transport + exact reviewed C4 candidate
+
+This is an independent explicit entry, not a longer C5 timer. C5 stays five seconds.
+No activation by worker. Root alone stages/runs/owns physical radio operations.
+
+Operator command after independent review and current resource/exclusion checks:
+ /tmp/pandanote-connectivity/bluetooth/bin/pandanote-bt-transport-session --enable-owned-transport /user/pandanote/content/inbox
+
+The inbox argument must be an existing absolute private root0700 writable directory,
+with safe nonsymlink ancestors and at least1MiB available. C4 independently repeats
+its existing validation. This controls FILE inbox; no Wi-Fi provisioning/secrets.
+Reader native optional --bluetooth-ipc remains exactly:
+ /tmp/pandanote-connectivity/bluetooth/service/local.sock
+24B request /48B response and all phone constants remain frozen C3; no wire/UI change.
+
+Staging before command: root-owned0700 launcher at the path above; exact C4 file
+root0700 at bin/pandanote-bt-supervisor (74748 B SHA88b008d1371e5b476ab78f25a7544f8902f9b9beca7ce894c73c9dc732db29ad).
+C4 still needs its exact reviewed bluetoothd/pandanote-bt-service/runtime dependencies.
+No automatic installer, autostart or device file operation is included here.
+
+Retained inputs: stock /usr/bin/btattach root0755 47536 B
+SHA746dee0da16884400a32eb89f64df58378824927901e8afe65157d574722ea6f.
+Child argv exactly btattach -P h4 -S 1500000 -B /dev/ttyS3.
+Exact C5 BSP/FDRV/libc/loader pins remain enforced in c6/preflight.c; no file patch.
+Private root /tmp/pandanote-connectivity/bluetooth must be tmpfs/root0700.
+C6 owns exclusive transport.lock. C4 independently owns lifecycle.lock.
+
+Existing C5 attach/ is deliberately NOT claimed or archived by code: it must be
+absent or empty. Root first verifies prior PID32514 is ended, no UART consumer or
+HCI remains, and archives only that ended evidence directory to an exact reviewed
+archive destination. Do not delete the transport lock, adopt a PID file, or remove
+an unrelated path. Existing nonempty attach-session/ also blocks another C6 run.
+C6 creates only attach-session/attach.log and c4.log root0600; retains both after exit.
+The caller must keep its own bounded output log and PID/PGID/SID evidence. No shell
+wrapper, killall, nohup assumption, background service or PID-file adoption provided.
+
+C6 runs indefinitely until TERM/INT, transport/controller failure or C4 exit.
+The parent checks no existing HCI, no ttyS3 console/FD owner, loaded exact BSP+FDRV,
+no BTLPM, correct char4:67 root0600 UART, runtime/tool hashes and limits.
+It never opens UART itself; fexecve of the reviewed stock tool is the hardware action.
+Initial readiness requires live owned attach FD on char4:67, exactly hci0 controller,
+observed address a4:6b:40:56:8c:f9 and initial name exactly AIC8820 or PandaNote 966U2 (one ASCII space); bound sysfs dev/inode.
+The second literal is the reviewed C4 main.conf alias observed by root as raw
+4f426f6f6b20383655320a; no-space PandaNote966U2 and all unknown values are rejected.
+After C4 starts, the name may legitimately change. Each second verify the same
+controller dev/inode/address and owned serial FD. Kernel connection entries
+hci0:HANDLE are allowed, while another controller or foreign entry is rejected.
+Linux4.4 primary source hci_conn_add_sysfs/class placement corroboration:
+ https://github.com/torvalds/linux/blob/v4.4/net/bluetooth/hci_sysfs.c
+This is causal session binding, not proof that sysfs ancestry identifies ttyS3.
+
+Only after transport readiness may exact C4 run. C4's existing live private D-Bus
+peer PID/UID -> org.bluez unique owner PID -> /org/bluez/hci0 Adapter1,
+GattManager1 and LEAdvertisingManager1 verification must pass before C3 spawn.
+C3 must then register GATT/Agent/advertisement and answer owned local IPC for C4
+readiness. No capability strings or sysfs presence are accepted as phone success.
+C4 existing pair-key state remains volatile and its clean shutdown erases owned keys;
+persistent pairing across restarts is not added by C6. This candidate adds no HCI local-version/features query. Actual LE/crypto/advertising,
+iPhone scan, secure pairing, CONTROL/FILE and native confirmation remain hardware gates.
+
+Limits: C6 parent ASsoft12MiB/hard64MiB/stack512KiB/core0. Attach AS8MiB,
+FD32/stack512KiB/logFSIZE16KiB. C4 child AS64MiB/FD32/logFSIZE256KiB, then C4
+sets reviewed per-child bounds. CPU must remain unlimited (same reviewed prerequisite).
+Holding C4 at64MiB is a maximum, not proof the physical36MiB MemAvailable fits.
+Review current MemAvailable/CMA before and monitor during; no allocation stress/restart.
+
+Shutdown order: TERM C4; wait up to12000ms for its owned descendants/socket/key cleanup;
+then forced stop if necessary and mark exit6/cleanup unproven. Next TERM attach grace500ms,
+then KILL/reap polling1s. Only owned fork-child PIDs are signaled/reaped. No killpg.
+Normal exit0 requires C4 exit0 and both direct children reaped. Early exit/health failure4;
+preconditions3; disabled2; pre-cancel7; failed/forced cleanup6. No restart loop.
+Kernel D-state can defeat bounded userspace termination; exit6 requires root inspection.
+Process exit releases flock even if a kernel-stuck child survives: inspect exact PID/FD
+and HCI before archival/retry. Child PDEATHSIG is inherited reviewed C4 code, not a
+claim that C4's grandchildren have been synchronously reaped by C6 after forced death.
+Logs/locks/session directories are intentionally retained and never auto-erased.
+
+Expected physical rollback: clean C4 exits and only then attach closes; verify no
+owned serial FD, no hci0/controller leftover, private service/bus removed, Wi-Fi stays
+COMPLETED with same IPv4/route and a fresh real calendar paint ACK still succeeds.
+Do not convert HCI failure into GPIO/rfkill/module/firmware fallback.
+
+Root reported C5 physical test (not rerun by this worker): exit0, owned PID32514,
+reapedtrue/killedfalse/5018ms;17 samples hci0, AIC8820/address above; hci0 disappeared
+at tool exit; Wi-Fi192.0.2.10/COMPLETED throughout, CMA14872KiB unchanged.
+MemAvailable minimum35708KiB/end36152KiB is a prior snapshot, not C6 fit proof.
+
+Offline proof scope: c6_run actual trusted own native Linux fixtures in isolated
+immutable no-device/no-network lab; MIPS ABI strict compile/link. Physical main/
+serial/proc/sysfs preflight is compile-only. Historical nested-QEMU MIPS fexecve
+ENOEXEC remains unresolved and is not replaced by a target execution claim.

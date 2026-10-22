@@ -1,0 +1,4 @@
+# Autonomous PandaNote normal-persistent-v1. No factory rcS, mount-a, swap or rcK.
+::sysinit:/bin/busybox sh @SYSTEM@/early.sh
+::respawn:/bin/busybox sh @SYSTEM@/service.sh
+::shutdown:/bin/busybox sync

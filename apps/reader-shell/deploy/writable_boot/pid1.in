@@ -1,0 +1,115 @@
+#!/bin/sh
+# RAM development bootstrap only. Normal persistent boot will use its own init.
+bb(){ /bin/busybox "$@"; }
+halt(){
+    [ -z "${DEV_PID_runtime-}" ] || dev_stop runtime || :
+    bb rm -f /tmp/pandanote-development/storage.ready
+    bb printf '%s\n' development-bootstrap-stopped > /tmp/development-bootstrap-error
+    while :; do bb sleep 3600; done
+}
+need(){ "$@" || halt; }
+write(){ bb printf '%s\n' "$2" > "$1"; }
+private(){
+    [ -f "$1" ] && [ ! -L "$1" ] || return 1
+    fields=$(LC_ALL=C bb ls -ldn "$1") || return 1
+    set -- $fields
+    [ "$#" -ge 6 ] && [ "$1:$2:$3" = -rw-------:1:0 ] || return 1
+    case "$4:$5" in *[!0-9:]*|:*|*:) return 1;; esac
+}
+match(){ private "$1" || return 1; value=$(bb sha256sum "$1") || return 1; [ "${value%% *}" = "$2" ]; }
+usb_child_ok(){
+    [ ! -e "$DEV_RUN/adbd.exit" ] || return 1
+    if [ "${adbd_released-0}" = 1 ]; then [ "$(bb cat "$DEV_RUN/adbd.go")" = start ] || return 1; fi
+    fields=$(bb cat "/proc/$adbd_pid/stat") || return 1
+    fields=${fields##*) }; set -- $fields
+    [ "$1" != Z ] && [ "$2:$3:$4" = "1:$adbd_pid:$adbd_pid" ]
+}
+main(){
+    [ "$$:$#" = 1:0 ] || halt
+    umask 077
+    PATH=/sbin:/bin:/usr/sbin:/usr/bin; HOME=/tmp; TMPDIR=/tmp
+    export PATH HOME TMPDIR
+    unset LD_PRELOAD LD_LIBRARY_PATH ENV BASH_ENV
+    need bb mount -t proc -o nosuid,nodev,noexec proc /proc
+    need bb mount -t sysfs -o nosuid,nodev,noexec sysfs /sys
+    found=0
+    while read -r source target type options rest; do
+        [ "$target" = / ] || continue
+        case "$source:$type" in /dev/root:ext4|/dev/mmcblk0p2:ext4) ;; *) halt;; esac
+        case ",$options," in *,ro,*) ;; *) halt;; esac
+        case ",$options," in *,rw,*) halt;; esac
+        case ",$options," in *,noload,*|*,norecovery,*) ;; *) halt;; esac
+        found=$((found+1))
+    done < /proc/mounts
+    [ "$found" = 1 ] || halt
+    if ! bb grep -q ' /dev devtmpfs ' /proc/mounts; then
+        need bb mount -t devtmpfs -o nosuid devtmpfs /dev
+    fi
+    need bb mount -t tmpfs -o mode=0755,nosuid,nodev,size=2m tmpfs /run
+    need bb mkdir -p /dev/pts
+    need bb mount -t devpts -o mode=0600,nosuid,noexec devpts /dev/pts
+    [ "$(bb wc -l < /proc/swaps)" = 1 ] || halt
+    need bb ifconfig lo 127.0.0.1 up
+    DEV_RUN=/tmp/pandanote-development; DEV_BB=/bin/busybox
+    need bb mkdir -m 0700 "$DEV_RUN"
+    bb cat > "$DEV_RUN/boot-child.sh" <<'PANDANOTE_BOOT_CHILD'
+@SUPERVISOR_SOURCE@
+PANDANOTE_BOOT_CHILD
+    need match "$DEV_RUN/boot-child.sh" @SUPERVISOR_SHA@
+    value=$(bb sha256sum /usr/bin/adbd) || halt
+    [ "${value%% *}" = f819818a78b04a6aa90970231d050cd037b0650e595de8b3aa42b7687cab17d5 ] || halt
+    need bb mount -t configfs -o nosuid,nodev,noexec configfs /sys/kernel/config
+    gadget=/sys/kernel/config/usb_gadget/adb_demo
+    need bb mkdir "$gadget"
+    need bb mkdir -p "$gadget/strings/0x409" "$gadget/configs/c.1/strings/0x409" "$gadget/functions/ffs.adb"
+    need write "$gadget/idVendor" 0x18d1
+    need write "$gadget/idProduct" 0xd003
+    need write "$gadget/bcdUSB" 0x0200
+    need write "$gadget/bcdDevice" 0x0100
+    need write "$gadget/strings/0x409/manufacturer" 'PandaNote development'
+    need write "$gadget/strings/0x409/product" 'Writable development candidate'
+    need write "$gadget/strings/0x409/serialnumber" PANDANOTE966U2_DEVELOPMENT
+    need write "$gadget/configs/c.1/MaxPower" 120
+    need write "$gadget/configs/c.1/strings/0x409/configuration" adb
+    need bb ln -s "$gadget/functions/ffs.adb" "$gadget/configs/c.1/ffs.adb"
+    need bb mkdir -p /dev/usb-ffs/adb
+    need bb mount -t functionfs -o nosuid,nodev,noexec adb /dev/usb-ffs/adb
+    [ -e /dev/usb-ffs/adb/ep0 ] || halt
+    /bin/busybox env -i PATH="$PATH" HOME=/tmp TMPDIR=/tmp EXTERNAL_STORAGE=/tmp DEV_BB=/bin/busybox \
+        /bin/busybox setsid /bin/busybox sh "$DEV_RUN/boot-child.sh" "$DEV_RUN" adbd /usr/bin/adbd </dev/null >/dev/null 2>&1 &
+    adbd_pid=$!
+    attempts=0
+    until usb_child_ok; do
+        attempts=$((attempts+1))
+        if [ "$attempts" -ge 10 ]; then bb kill -KILL "$adbd_pid" 2>/dev/null || :; wait "$adbd_pid" 2>/dev/null || :; halt; fi
+        bb sleep 0.1
+    done
+    need write "$DEV_RUN/adbd.pid" "$adbd_pid"
+    need write "$DEV_RUN/adbd.go" start
+    adbd_released=1
+    need write "$DEV_RUN/bootstrap.state" awaiting-operator-payload-and-boot-handoff
+    while [ ! -e "$DEV_RUN/payload.ready" ] || [ ! -e "$DEV_RUN/boot-operator-handoff" ]; do
+        usb_child_ok || halt
+        bb sleep 1
+    done
+    need match "$DEV_RUN/policy.sh" @POLICY_SHA@
+    need match "$DEV_RUN/runtime.sh" @RUNTIME_SHA@
+    need match "$DEV_RUN/child-supervisor.sh" @SUPERVISOR_SHA@
+    need private "$DEV_RUN/payload.ready"
+    [ "$(bb cat "$DEV_RUN/payload.ready")" = writable-development-v1 ] || halt
+    . "$DEV_RUN/policy.sh"
+    DEV_MOUNTS=/proc/mounts; DEV_SWAPS=/proc/swaps
+    DEV_SYS_BLOCK=/sys/class/block; DEV_NET=/sys/class/net
+    DEV_SUPERVISOR="$DEV_RUN/child-supervisor.sh"; DEV_SUPERVISOR_SHA=@SUPERVISOR_SHA@
+    DEV_PID_adbd=$adbd_pid
+    export DEV_RUN DEV_BB DEV_MOUNTS DEV_SWAPS DEV_SYS_BLOCK DEV_NET
+    need dev_receipt_ok
+    need dev_spawn runtime /bin/busybox sh "$DEV_RUN/runtime.sh"
+    trap 'dev_stop runtime || :; dev_stop adbd || :; bb sync; halt' TERM INT
+    while :; do
+        bb sleep 1
+        usb_child_ok || halt
+        dev_child_running runtime || halt
+    done
+}
+main "$@"

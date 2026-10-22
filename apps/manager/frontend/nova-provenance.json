@@ -1,0 +1,52 @@
+{
+  "style": "base-nova",
+  "iconLibrary": "lucide",
+  "cli": "shadcn@4.22.1",
+  "command": "./node_modules/.bin/shadcn add button input checkbox label badge -y",
+  "sources": [
+    "https://ui.shadcn.com/docs/installation/manual",
+    "https://ui.shadcn.com/docs/changelog/2025-12-shadcn-create"
+  ],
+  "components": [
+    {
+      "name": "button",
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/button.json",
+      "registry_sha256": "9ba7e870178813f0552b818a913a2792fb500c779e36395740b4973e3025d427",
+      "registry_name": "button",
+      "generated_file": "src/components/ui/button.tsx",
+      "generated_sha256": "313353436d0fcc8e44ab470adb614b9fd013d28626f624328ea0d66d41a6c81b"
+    },
+    {
+      "name": "input",
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/input.json",
+      "registry_sha256": "bbad1bba130ac9750a61844eeb8f043e8a710846e07689fa85398b80a46c2741",
+      "registry_name": "input",
+      "generated_file": "src/components/ui/input.tsx",
+      "generated_sha256": "dab990dfefa0ba78854ab6602ad074270dba9d7d1262184d9bfbb62bd990903b"
+    },
+    {
+      "name": "checkbox",
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/checkbox.json",
+      "registry_sha256": "e6df7b595f25a7ee97c3fb94e0ddc35998f74c98b990d3030e485905ec677178",
+      "registry_name": "checkbox",
+      "generated_file": "src/components/ui/checkbox.tsx",
+      "generated_sha256": "51b82e5ca459ea7792d8f24ac924f13aeaa2b2cd338560d2b4291e38b648c12e"
+    },
+    {
+      "name": "label",
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/label.json",
+      "registry_sha256": "89b01e14fd39dceece9fa421e71e78ea83286bd43a2ca1c2f55d2e8d3958fff2",
+      "registry_name": "label",
+      "generated_file": "src/components/ui/label.tsx",
+      "generated_sha256": "b3b7b21d2877838fc73713df48a47248392de04a3b3fafa8961369f33ab14530"
+    },
+    {
+      "name": "badge",
+      "registry_url": "https://ui.shadcn.com/r/styles/base-nova/badge.json",
+      "registry_sha256": "ccc20021cdcbf0fb23c0d4d28f1da4adde8e51ba59f4b11dd2722ed97a5ee3a4",
+      "registry_name": "badge",
+      "generated_file": "src/components/ui/badge.tsx",
+      "generated_sha256": "d9fb280e266119c4b62a4c518e63152de27b094c68d3e5f8929d05bfb0c1bc6c"
+    }
+  ]
+}

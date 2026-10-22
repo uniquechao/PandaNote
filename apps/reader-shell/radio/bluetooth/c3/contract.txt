@@ -1,0 +1,55 @@
+C3 v1 source contract — CONTROL and FILE, never provisioning
+
+This checkpoint is standalone software; it adds no radio/Qt/boot caller. Existing
+private BlueZ daemon lifecycle remains separately gated. Persistent inbox and IPC
+roots are caller-supplied, reviewed private directories, not implicitly /tmp.
+Offline tests use selfcontained private fixtures only.
+
+GATT UUIDs (stable protocol v1):
+service c23586e2-a8cb-4fe1-95a9-28109b983001
+RX      c23586e2-a8cb-4fe1-95a9-28109b983002
+ACK     c23586e2-a8cb-4fe1-95a9-28109b983003
+SESSION c23586e2-a8cb-4fe1-95a9-28109b983004
+All content characteristics require authenticated encryption and Secure Connections
+via BlueZ secure-read/secure-write flags. RX supports write requests only, not
+write-without-response. ACK uses polling ReadValue initially, avoiding notify
+security ambiguity; notifications may be added only after proven peer binding.
+Only exact owned BlueZ unique sender may invoke methods. Every read/write resolves
+its device option through that same owner and verifies bonded+connected LE peer,
+with the encrypted/MITM permission enforced by BlueZ's characteristic security.
+A phone cannot supply local security flags, grant, nonce, or confirmation decision.
+
+Local numeric approval: trusted UI opens 60s pair window; Agent RequestConfirmation
+records exact device/passkey, creates nonzero nonce16 from OS RNG and holds the
+BlueZ request. UI replies on a private owner-only local IPC endpoint with exact
+nonce and CONTROL1/FILE4 grant, within30s/window. Deny/cancel/owner loss/link loss/
+timeout closes policy, erases in-memory transfer, and rejects held Agent call.
+No automatic JustWorks/PIN, persistent trust grant or DefaultAgent takeover.
+
+SESSION returns version1 + grants1 + nonce16 after approval and validated bonded,
+connected secure peer, maximum18 bytes. Existing policy then authorizes a120s
+session. This is replay binding, not custom cryptography.
+
+RX WriteValue payload fragment, supports default ATT MTU23 (20-byte value):
+byte0 flags START1 END2; byte1 transfer id; bytes2..3 little-endian record offset;
+remaining1..(MTU-7) bytes. Maximum complete policy record154 bytes. START requires
+offset0 and empty assembly. Exact sequential offsets only, <=5s assembly lifetime.
+A new START may replace an abandoned partial assembly; no traffic extends the
+policy session. END must finish one complete policy record. Complete record
+syntax/opcodes remain policy.h/README.txt: CONTROL0=status,1=home,2=refresh;
+FILE_BEGIN3/CHUNK4/COMMIT5/CANCEL6. Opcode2 always rejected.
+
+ACK characteristic is12 bytes: version1,status1,record sequence u32LE,
+next fragment offset u16LE,next record sequence u32LE. Status0 partial,1 accepted,
+2 rejected,3 storage failure. Clients wait for each WriteValue response and poll
+ACK, retry only the identical last fragment after missing ACK, maximum3 retries.
+An identical last fragment returns the cached ACK without repeating an effect;
+changed duplicates/gaps reject. No queue or unbounded pending notifications.
+
+FILE is <=256KiB, safe nonexecutable .txt/.pdf/.epub name<=48, SHA256 exact. COMMIT
+creates an exclusive random owner-only temp file relative to validated inbox FD,
+writes bounded bytes, fsyncs it, atomically links without replacing existing name,
+unlinks only its own temp inode and fsyncs directory. Existing/symlink/unsafe
+inbox is rejected. Success ACK follows finalization, not merely RAM hash match.
+Storage error never emits a success effect. Durable state and retransmission
+receipt retention beyond process life remain installer/supervisor integration work.

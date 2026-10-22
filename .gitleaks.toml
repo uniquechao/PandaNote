@@ -1,0 +1,3 @@
+title = "PandaNote public-source secret scanning"
+[extend]
+useDefault = true
