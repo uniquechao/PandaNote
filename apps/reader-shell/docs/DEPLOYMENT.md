@@ -34,3 +34,7 @@ python3 apps/reader-shell/build.py
 5. 验证失败时回退整套组件及其原始状态。源码统一更名未对现有实体设备执行迁移。
 
 需要在外部参考目录中准备的新路径包括 `pandanote-analysis/app-development-research/qt-stock-sysroot/` 与 `pandanote-analysis/app-development-research/minimal-qt/`。其文件来源、ABI 与校验值仍需独立验证；仅修改目录名不构成输入验证。
+
+## OTA 自动升级设计
+
+[设备端 OTA 自动升级详细设计](OTA-DESIGN.md) 定义基于精确 NORMAL 普通文件事务的发布签名、设备编排、安装重启和恢复流程。目前交付为详细设计，自动升级组件尚未实现，启用前需要受控引导部署及对应验收。
