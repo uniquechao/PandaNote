@@ -2,11 +2,12 @@
 
 ## 职责边界
 
-设备端 OTA 自动升级的设计与生命周期约束，覆盖发布验证、下载、安装编排、重启确认及恢复。当前交付为设计文档，OTA 自动化组件尚未实现；不负责内核、bootloader、GPT、分区布局或原始块升级。
+设备端与管理端 OTA 自动升级的配套设计及生命周期约束，覆盖发布审批、逐设备授权、下载、安装编排、重启确认及恢复。当前交付为设计文档，OTA 自动化组件尚未实现；不负责内核、bootloader、GPT、分区布局或原始块升级。
 
 ## 关联源码路径
 
 - 详细设计：`apps/reader-shell/docs/OTA-DESIGN.md`；部署入口：`apps/reader-shell/docs/DEPLOYMENT.md`。
+- 管理端详细设计：`apps/manager/docs/OTA-DESIGN.md`；管理与设备认证边界：`apps/manager/manager/{app.py,cloud_auth.py,reader.py,cloud.py,fleet.py,device_api.py}`。
 - 现有 NORMAL 事务：`apps/reader-shell/deploy/normal_boot/{normal_upgrade.py,upgrade_profile.py,apply_tool.c,upgrade_wire.h,upgrade_target.h}`。
 - 启动与休眠：`apps/reader-shell/deploy/normal_boot/{service.in,early.in,policy.in,suspend.in,build.py}`。
 - 设备网络及电源：`apps/reader-shell/{sync.h,sync.cpp,tls.cpp,main.cpp,standbypolicy.h,battery.h,battery_posix.cpp}`。
@@ -21,6 +22,9 @@
 - 当前 `/tmp` 为 20 MiB、`/run` 为 4 MiB；wire 上限 24 MiB、128 文件。下载应持久化到 `/user`，内容维护窗口为 30 秒。
 - 电量为可选工厂曲线估计，充电状态可能未知；USB 连接不是充电证据。
 - OTA 签名、worker、设备协议和健康确认是拟新增能力，不能作为现有部署事实。历史安装记录与当前公开命名迁移分别解释。
+- 管理端 OTA 拟使用独立 OtaStore 和数据库，保持内容版本与显示 ACK 独立；云端凭证映射稳定设备 ID，本地单 token 须显式核验唯一绑定后才允许 OTA。
+- 完整候选 manifest 及全部文件须留存为下一轮精确旧包；相同目标 native 不代表相同候选基线。事件按认证设备与 event_id 幂等，乱序不倒退，矛盾终态保留证据并暂停。
+- 撤回停止新增授权与下载，不能即时撤销离线有效授权；拟定默认有效期 1 小时、最多 24 小时。取消任务不能释放未核对完成的设备事务，失败发布以更高 sequence 修复。
 
 ## 接口与测试
 
@@ -39,6 +43,11 @@ agent: codex
 source: auto
 status: active
 created_ts: 1792688313997
-last_used_ts: 1792689051019
+last_used_ts: 1792690215246
 ---
 <!-- panda:module-meta:end -->
+
+<!-- panda:module-knowledge:start -->
+（本区块由 PandaDOS 引擎在每条 issue 结束时自动维护，只保留最近若干条，手工修改会被覆盖。）
+- #20261022-377291c done · 在设备端研究一下如何实现 ota 自动升级 —— 目标：研究设备端 OTA 自动升级并输出可执行详细设计文档；改动 10 个文件
+<!-- panda:module-knowledge:end -->

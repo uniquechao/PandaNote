@@ -6,6 +6,7 @@
 
 - [开发与测试](docs/DEVELOPMENT.md)
 - [本地与云角色部署](docs/DEPLOYMENT.md)
+- [管理端 OTA 升级详细设计](docs/OTA-DESIGN.md)（设计阶段，尚未实现）
 - [Web 端源码与构建](frontend/README.md)
 - [共享协议](../shared/README.md)
 - [项目总览](../../README.md)

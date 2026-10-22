@@ -138,7 +138,7 @@ worker 持久化最高已接受的发布序号以及对应描述摘要。同序�
 
 首版使用固定分段 POST，避免修改现有客户端实现 Range/206 和可变重定向语义。每次下载调用仍使用独立 `DeviceHttp`，限制响应最多 256 KiB，校验长度后追加至本机部分文件；不用完整包 `QByteArray`。下载段本身不另设信任，安装前必须对完整 bundle 计算签名授权绑定的 SHA-256。发现最终摘要错误删除该部分下载并标记发布错误，不执行安装。
 
-服务存储新增三个逻辑集合：不可变发布、绑定设备的部署授权、升级事件；迁移实现时在 `store.py` 中新增独立表并做旧数据库迁移测试。内容 `last_displayed_version` 不写入程序版本。状态展示区分“已发现、已下载、已提交待重启、已运行确认、需恢复”，不能把 API 成功或安装工具退出码显示为“升级成功”。
+服务存储新增三个逻辑集合：不可变发布、绑定设备的部署授权、升级事件；管理端详细方案见 [管理端 OTA 升级详细设计](../../manager/docs/OTA-DESIGN.md)。存储实施细化为独立 `OtaStore` 和 OTA 数据库，保持内容 `store.py` 与旧内容库不变，并验证独立迁移、备份恢复及旧内容兼容。内容 `last_displayed_version` 不写入程序版本。状态展示区分“已发现、已下载、已提交待重启、已运行确认、需恢复”，不能把 API 成功或安装工具退出码显示为“升级成功”。
 
 ## 本地目录与持久化
 
@@ -180,7 +180,7 @@ worker 持久化最高已接受的发布序号以及对应描述摘要。同序�
 
 恢复优先级为实际设备身份与只读状态、精确 old/new 入口和闭包、helper 备份和结果，最后才参考 worker 状态。若 worker 在 helper 成功后、落盘 `COMMITTED_PENDING_REBOOT` 前崩溃，保守进入 `RECOVERY_REQUIRED`；首版不凭猜测补写成功。若工作记录被破坏或出现既非 old 也非 new 的入口，也进入恢复状态。
 
-状态中的上报事件与服务端显示不反向授权安装。服务端撤回发布在 `APPLYING` 前生效；进入文件事务后不因网络消息中断写入和恢复。
+状态中的上报事件与服务端显示不反向授权安装。设备在 `APPLYING` 前观察到服务端撤回时停止本次升级；服务端停止新增授权和下载，但不能即时撤销离线设备持有的有效签名授权。首版授权有效期默认 1 小时且不超过 24 小时；进入文件事务后不因网络消息中断写入和恢复。
 
 ## 安全窗口与低功耗
 
@@ -294,7 +294,7 @@ python3 apps/reader-shell/deploy/normal_boot/normal_upgrade.py \
 | 2 | 新增 `apps/reader-shell/ota_worker.cpp`、`ota_storage.cpp`、`ota_proof.cpp`；修改 `build.py`、`build_tls.py` 的必要构建闭包 | 生成无 QtGui 的目标 worker，持久化及采集证明；主机测试替换系统调用，不执行目标 ELF |
 | 3 | 修改 `deploy/normal_boot/apply_tool.c`、`upgrade_wire.h`、`upgrade_target.h`、`build_apply.py`；新增共享 `ota_authorization` 实现 | 新增签名 OTA 入口，复用原事务，final lock 后复查动态前提；原 NORMAL/RAM 模式回归通过 |
 | 4 | 修改 `deploy/normal_boot/service.in`、`suspend.in`、`build.py`，及 `main.cpp`、`shell.h`、`shell.cpp` | 独立 worker、草稿与安全窗口、重启处理、健康事件均纳入新闭包；不破坏 USB 与现有安装锁 |
-| 5 | 新增 `apps/manager/manager/ota.py`、发布工具；修改 `reader.py`、`cloud.py`、`store.py` | 认证隔离的三条设备接口、受审发布签名流程、逐设备候选生成与完整旧包留存；数据库迁移可在副本上验证 |
+| 5 | 新增 `apps/manager/manager/ota.py`、`ota_store.py`、发布工具；修改 `reader.py`、`cloud.py` 及管理路由 | 认证隔离的三条设备接口、受审发布签名流程、逐设备候选生成与完整旧包留存；独立 OTA 数据库迁移可在副本上验证 |
 | 6 | 新增主机 OTA 测试及协议夹具，扩展 normal boot 事务测试 | 在普通文件 clone 中完成查询、下载、提交、恢复、模拟重启和健康上报；每个持久化边界注入故障 |
 | 7 | 更新设备 `DEPLOYMENT.md` 与 `DEVELOPMENT.md` 的实际实现说明 | 构建受控引导包，先一台设备验收，再按稳定 ID 灰度开放，失败立即停止新增部署 |
 
