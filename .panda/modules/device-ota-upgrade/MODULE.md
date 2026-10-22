@@ -2,7 +2,7 @@
 
 ## 职责边界
 
-设备端与管理端 OTA 自动升级的配套设计及生命周期约束，覆盖发布审批、逐设备授权、下载、安装编排、重启确认及恢复。管理端已实现独立 OTA 存储、受控导入、隔离签名、逐基线候选、设备接口及灰度页面，默认关闭；设备端 worker/helper 仍须按配套设计实现并通过真机核验；不负责内核、bootloader、GPT、分区布局或原始块升级。
+设备端与管理端 OTA 自动升级的配套设计及生命周期约束，覆盖发布审批、逐设备授权、下载、安装编排、重启确认及恢复。管理端已实现独立 OTA 存储、受控导入、隔离签名、逐基线候选、设备接口及灰度页面，默认关闭；设备端已实现手动/每日检测、逐次确认、独立 worker/授权 helper、安装重启及健康上报，仍须完成目标构建与真机核验后才能启用；不负责内核、bootloader、GPT、分区布局或原始块升级。
 
 ## 关联源码路径
 
@@ -10,6 +10,7 @@
 - 管理端详细设计：`apps/manager/docs/OTA-DESIGN.md`；管理与设备认证边界：`apps/manager/manager/{app.py,cloud_auth.py,reader.py,cloud.py,fleet.py,device_api.py}`。
 - 现有 NORMAL 事务：`apps/reader-shell/deploy/normal_boot/{normal_upgrade.py,upgrade_profile.py,apply_tool.c,upgrade_wire.h,upgrade_target.h}`。
 - 启动与休眠：`apps/reader-shell/deploy/normal_boot/{service.in,early.in,policy.in,suspend.in,build.py}`。
+- 设备 OTA：`apps/reader-shell/ota/`、`ota_worker.cpp`、`ota_ui.cpp`；首次接入材料：`deploy/normal_boot/prepare_ota.py`；受限服务接线：`deploy/normal_boot/ota.in`（均位于 reader-shell 下）。
 - 设备网络及电源：`apps/reader-shell/{sync.h,sync.cpp,tls.cpp,main.cpp,standbypolicy.h,battery.h,battery_posix.cpp}`。
 - 管理端实现：`apps/manager/manager/{ota_store.py,ota.py,ota_api.py,ota_publish.py,ota_worker.py,ota_signer.py,ota_verify.py}`；共享 OTA 协议：`apps/shared/DEVICE_OTA_V1.txt`；受控维护入口：`apps/manager/docs/OTA-OPERATIONS.md`。
 - 服务端内容接口：`apps/manager/manager/{reader.py,cloud.py,store.py}`；共享协议：`apps/shared/DEVICE_HTTP_V1.txt`。
@@ -32,8 +33,13 @@
 - 灰度无报告期限从当前批次放行或显式恢复时计时，未来批次不提前超时；恢复未知目标保留 attempt 阶段和设备占用。本地已接入设备的配置与预览通过同一内容服务提供，不新增设备内容根或发布器。
 - 受控恢复核对只由维护入口 `reconcile` 释放设备目标，保留事件和审计，不提供 Web 强制回退。对象读取校验摘要，chunk 对照文件属性封存防止同长度替换，异常触发全局隔离。
 
+- 设备每日检测以持久化成功时间计时，离线不计为检查完成；安装须按下时已显示的同一 attempt/generation 的完整短点击确认，授权续期不能恢复已清除的确认。过期或冲突 nonce 清除后重新采集请求；未启用设备不启动 OTA 快速定时器，迟到接入复用已有刷新周期。最高接受序号同时绑定发布原文摘要，同序号只续期同一发布。
+- OTA helper 的路径和摘要固定在首次受控接入配置，须与管理端登记一致；升级后的 worker 继续执行这份预安装 helper，不能自动选择下载包的新 helper。对应引导 release 必须保留，更换 helper 走受控接入。
+- native 完整产物包含无 QtGui 的 worker、独立授权 helper 及 helper 来源清单，复用管理端原有 native 输入树；首次接入材料不能覆盖在用状态或重置高水位。跨启动保留 APPLYING 不确定性，健康预算不因同次启动 worker 重启而重置。
+
 ## 接口与测试
 
+- 设备 OTA 主机定向入口：`python3 apps/reader-shell/tests/run_ota_host.py`，预置固定 MbedTLS 3.6.7 源码与 Qt5 主机开发库；运行生产验签、存储、恢复判定及 worker 确认/推迟状态机，不能代替目标 Qt4/MIPS 或真实闪存验收。
 - 管理端定向测试：`tests/test_ota_{store,publish,reports,api,signer}.py`；前端 `src/ota.test.tsx`。主机两轮合成完整闭包与签名向量不代表真实闪存、重启或恢复验收。
 - 现有 `normal-exact-upgrade-v1`、`PANDANOTE-UPGRADE-1` 与 `PANDANOTE-NORMAL-PROOF-1` 保持独立于 RAM 模式。
 - 定向主机测试：`python3 -m unittest discover -s apps/reader-shell/deploy/normal_boot/tests -p test_upgrade_boundaries.py -v`，覆盖精确交接与超级块/remount 边界，测试前需存在该目录下的 `build/`。
@@ -50,7 +56,7 @@ agent: codex
 source: auto
 status: active
 created_ts: 1792688313997
-last_used_ts: 1792692913603
+last_used_ts: 1792695743161
 ---
 <!-- panda:module-meta:end -->
 
@@ -58,4 +64,5 @@ last_used_ts: 1792692913603
 （本区块由 PandaDOS 引擎在每条 issue 结束时自动维护，只保留最近若干条，手工修改会被覆盖。）
 - #20261022-377291c done · 在设备端研究一下如何实现 ota 自动升级 —— 目标：研究设备端 OTA 自动升级并输出可执行详细设计文档；改动 10 个文件
 - #20261022-ff3291c done · 设计管理端 ota 升级 —— 目标：完成管理端 OTA 升级详细设计；改动 9 个文件
+- #20261022-dc2691c done · ota 管理端实现 —— 目标：基于 apps/manager/docs/OTA-DESIGN.md 的设计实现全部任务 记住页面布局合理；改动 42 个文件
 <!-- panda:module-knowledge:end -->

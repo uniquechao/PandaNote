@@ -37,6 +37,8 @@ def sha(path):
 
 def build(evidence, sources=None, target_name="content", support_files=None):
     sources = list(sources or ["content.cpp", "tests/content_cases.cpp"])
+    ota_worker = target_name == "ota-worker"
+    if "shell.cpp" in sources and "ota_ui.cpp" not in sources:sources += ["ota_ui.cpp","ota/json.cpp","ota/storage.cpp"]
     runtime = "main.cpp" in sources or "main.cpp" in (support_files or [])
     production_clock = target_name == "reader-shell" and "main.cpp" in sources
     if runtime:
@@ -64,11 +66,11 @@ def build(evidence, sources=None, target_name="content", support_files=None):
         if actual!=item['sha256']: raise RuntimeError('Compiler-side stock library changed')
     for name,expected in json.loads((ROOT/'third_party/sha256/provenance.json').read_text())['sha256'].items():
         if sha(ROOT/'third_party/sha256'/name)!=expected: raise RuntimeError('Vendored SHA256 source changed')
-    run(['docker','exec',CONTAINER,'mkdir','-p',WORK+'/tests',WORK+'/build-support',WORK+'/third_party/sha256',WORK+'/build'])
-    for name in list(dict.fromkeys(['content.h','navigation.h','shell.h','sync.h','tls.h','resolver.h','tlsclock.h','dnsconfig.h','localapps.h','bluetooth.h','systemclock.h','startupretry.h','standbypolicy.h'] if target_name!='content' else ['content.h'])) + list(sources) + list(support_files or []) + ['build-support/start.S','build-support/entry.h','build-support/csu.cpp','build-support/libio-init.c','build-support/qws-cursor.h','einkrefresh.h','powerkeys.h','powerrequest.h','battery.h','build-support/qws-display-lock.h','third_party/sha256/sha256.c','third_party/sha256/sha256.h']:
+    run(['docker','exec',CONTAINER,'mkdir','-p',WORK+'/tests',WORK+'/build-support',WORK+'/ota',WORK+'/third_party/sha256',WORK+'/build'])
+    for name in list(dict.fromkeys(['content.h','navigation.h','shell.h','sync.h','tls.h','resolver.h','tlsclock.h','dnsconfig.h','localapps.h','bluetooth.h','systemclock.h','startupretry.h','standbypolicy.h'] if target_name!='content' else ['content.h'])) + list(sources) + list(support_files or []) + ['build-support/start.S','build-support/entry.h','build-support/csu.cpp','build-support/libio-init.c','build-support/qws-cursor.h','einkrefresh.h','powerkeys.h','powerrequest.h','battery.h','ota/core.h','ota/device.h','build-support/qws-display-lock.h','third_party/sha256/sha256.c','third_party/sha256/sha256.h']:
         run(['docker','cp',ROOT/name,CONTAINER+':'+WORK+'/'+name])
     abi=['-EL','-march=mips32r2','-mabi=32','-mhard-float','-mfp64','-mnan=2008','-fPIC']
-    cxx=['mipsel-linux-gnu-g++','-std=c++98','-O2','-fno-exceptions','-fno-rtti',*abi,'-I'+HEADERS,'-isystem','/usr/mipsisa32r6el-linux-gnu/include']
+    cxx=['mipsel-linux-gnu-g++','-std=c++98','-O2','-fno-exceptions','-fno-rtti','-ffunction-sections','-fdata-sections',*abi,'-I'+HEADERS,'-isystem','/usr/mipsisa32r6el-linux-gnu/include']
     if with_tls:cxx += ['-I'+WORK+'/tls/source/include','-I'+WORK+'/tls','-DMBEDTLS_CONFIG_FILE="pandanote_config.h"']
     objects=[(source,Path(source).stem) for source in sources]+[('build-support/csu.cpp','csu')]
     for source,obj in objects:
@@ -76,7 +78,7 @@ def build(evidence, sources=None, target_name="content", support_files=None):
     for source,obj in [('build-support/start.S','start'),('build-support/libio-init.c','libio-init'),('third_party/sha256/sha256.c','sha256')]:
         inside(['mipsel-linux-gnu-gcc',*abi,'-Ibuild-support','-isystem','/usr/mipsisa32r6el-linux-gnu/include','-c',source,'-o','build/'+obj+'.o'])
     target='build/'+target_name+'.mipsel'
-    inside(['mipsel-linux-gnu-ld','-EL','-m','elf32ltsmip','-e','__start','--dynamic-linker','/lib/ld-linux-mipsn8.so.1','-rpath-link',LIB,'-L',LIB,'--no-allow-shlib-undefined','-z','noexecstack','-z','relro','-z','now','--gc-sections',*[('build/'+x+'.o') for x in ['start']+[obj for source,obj in objects]+['libio-init','sha256']],*([WORK+'/tls/libpandanote-tls.a'] if with_tls else []),'-l:libQtGui.so.4','-l:libQtCore.so.4','-l:libstdc++.so.6','-l:libgcc_s.so.1','-l:libc.so.6','-o',target])
+    inside(['mipsel-linux-gnu-ld','-EL','-m','elf32ltsmip','-e','__start','--dynamic-linker','/lib/ld-linux-mipsn8.so.1','-rpath-link',LIB,'-L',LIB,'--no-allow-shlib-undefined','-z','noexecstack','-z','relro','-z','now','--gc-sections',*[('build/'+x+'.o') for x in ['start']+[obj for source,obj in objects]+['libio-init','sha256']],*([WORK+'/tls/libpandanote-tls.a'] if with_tls else []),* ([] if ota_worker else ['-l:libQtGui.so.4']),'-l:libQtCore.so.4','-l:libstdc++.so.6','-l:libgcc_s.so.1','-l:libc.so.6','-o',target])
     elf=inside(['mipsel-linux-gnu-readelf','-h','-l','-A',target]);dynamic=inside(['mipsel-linux-gnu-readelf','-d','-V',target]);symbols=inside(['mipsel-linux-gnu-readelf','--dyn-syms','--wide',target])
     for marker in ['ELF32','little endian','mips32r2','nan2008','o32','/lib/ld-linux-mipsn8.so.1','Hard float (32-bit CPU, 64-bit FPU)']:
         if marker not in elf: raise RuntimeError('ABI missing '+marker)
@@ -84,6 +86,7 @@ def build(evidence, sources=None, target_name="content", support_files=None):
         if forbidden=='clock_settime' and production_clock:continue
         if forbidden=='execve' and with_tls:continue # resolver child execs this verified ELF only
         if any(line.split()[-1].split('@')[0]==forbidden for line in symbols.splitlines() if ' UND ' in line): raise RuntimeError('Forbidden imported symbol: '+forbidden)
+    if ota_worker and 'libQtGui' in dynamic:raise RuntimeError('OTA worker must not link QtGui')
     if 'GLIBC_2.34' in dynamic or '(INIT_ARRAY)' in dynamic or '(FINI_ARRAY)' in dynamic: raise RuntimeError('Unsupported startup/runtime ABI')
     if not any('GLOBAL' in line and 'OBJECT' in line and line.split()[-1]=='_IO_stdin_used' for line in symbols.splitlines()): raise RuntimeError('Missing modern glibc stdio marker')
     (evidence/(target_name+'-elf.txt')).write_text(elf+dynamic+symbols)

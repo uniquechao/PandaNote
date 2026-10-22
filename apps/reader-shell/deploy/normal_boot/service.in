@@ -6,7 +6,7 @@ normal_rescue(){
     # Stop and reap only the app session this service owns; retain adbd rescue.
     if [ -n "${DEV_PID_app-}" ]; then normal_stop app || reason=app-stop-failed; fi
     bb printf '%s\n' "$reason" > /run/pandanote-normal/rescue.reason
-    while :; do bb sleep 3600; done
+    while :; do if [ -n "${NORMAL_OTA_WORKER-}" ]; then normal_ota_reboot;fi;bb sleep 2; done
 }
 normal_usb(){
     local value gadget=/sys/kernel/config/usb_gadget/adb_demo
@@ -67,12 +67,14 @@ main(){
     . @SYSTEM@/policy.sh
     N_PROC=/proc;N_SYS=/sys;N_DEV=/dev
     DEV_RUN=/run/pandanote-normal;DEV_BB=/bin/busybox
-    DEV_SUPERVISOR=@SYSTEM@/child-supervisor.sh;DEV_SUPERVISOR_SHA=41686b1f134df913014fe56acd8edc7921fce8c737dedc6b7336f7a25a620e84
+    DEV_SUPERVISOR=@SYSTEM@/child-supervisor.sh;DEV_SUPERVISOR_SHA=@SUPERVISOR_SHA@
     normal_usb || normal_rescue usb-failed
     # USB comes first so failed storage/hardware remains diagnosable.
     normal_mount_persistent || normal_rescue storage-failed
     bb printf '%s\n' normal-persistent-v1 > "$DEV_RUN/storage.ready"
     normal_release || normal_rescue release-pin-failed
+    . @SYSTEM@/ota.sh
+    normal_ota_init || :
     . @SYSTEM@/hardware.sh
     normal_hardware || normal_rescue hardware-failed
     /bin/busybox sh "$release/radio/radio-normal-init.sh" --wifi-normal || normal_rescue radio-failed
@@ -80,12 +82,13 @@ main(){
     bb printf '%s\n' '4498 18 -817313 -41 2747 -763357 35540' > /run/pandanote-normal/pointercal
     bb printf '%s\n' power-keys-v1 > "$DEV_RUN/power.ready" || normal_rescue power-setup-failed
     normal_spawn app /bin/busybox env -i PATH="$PATH" HOME=/user/pandanote TMPDIR=/tmp XDG_CONFIG_HOME=/user/pandanote/config XDG_CACHE_HOME=/user/pandanote/cache QTDIR="$release" QT_QWS_FONTDIR="$release/assets" QT_PLUGIN_PATH=/run/pandanote-normal/empty-plugins POINTERCAL_FILE=/run/pandanote-normal/pointercal LD_LIBRARY_PATH=/run/pandanote-opt/opt/image/opt/Qtopia/lib:/lib:/usr/lib QWS_DISPLAY=Transformed:Rot270:LinuxFb:mmWidth200:mmHeight120:0 QWS_KEYBOARD=none QWS_MOUSE_PROTO=evdevtouch:/dev/input/event0 QWS_NO_SHARE_FONTS=1 "$release/reader-shell.mipsel" --qws-server --power-keys --workspace-dir /user/pandanote --sync-config /user/pandanote/config/reader-sync.ini --sync-cache-dir /user/pandanote/cache/sync --bluetooth-ipc /tmp/pandanote-connectivity/bluetooth/service/local.sock || normal_rescue app-launch-failed
-    trap 'normal_stop app || :;normal_stop adbd || :;bb sync;exit 0' TERM INT
+    trap 'normal_stop ota || :;normal_stop app || :;normal_stop adbd || :;bb sync;exit 0' TERM INT
     . @SYSTEM@/suspend.sh
     normal_suspend_init || : # Missing suspend capability leaves ordinary UI/USB operational.
     normal_log application-started || :
     while :; do
         bb sleep 2
+        normal_ota_reboot
         if [ -e "$DEV_RUN/poweroff.request" ] || [ -L "$DEV_RUN/poweroff.request" ]; then
             normal_poweroff || normal_rescue poweroff-failed
             while :; do bb sleep 3600; done

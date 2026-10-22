@@ -223,7 +223,15 @@ static int loadbackup(const char*oldsha){char p[256],h[65],want[65];size_t n;uns
 #endif
  backup_done=1;return 0;
 }
-int main(int argc,char**argv){int fd=-1,lockfd=-1,status=1,index=1;struct stat st;unsigned char*b=MAP_FAILED;char oldsha[65],name[256];
+#ifdef PANDANOTE_OTA_UPGRADE
+extern int pandanote_ota_gate(int*,char***);
+extern int pandanote_ota_final_check(void);
+#endif
+int main(int argc,char**argv){
+#ifdef PANDANOTE_OTA_UPGRADE
+ if(pandanote_ota_gate(&argc,&argv)){fprintf(stderr,"refuse=ota-authorization\n");return 2;}
+#endif
+int fd=-1,lockfd=-1,status=1,index=1;struct stat st;unsigned char*b=MAP_FAILED;char oldsha[65],name[256];
 #ifdef PANDANOTE_FIXTURE
  if((
 #ifdef PANDANOTE_NORMAL_UPGRADE
@@ -260,6 +268,9 @@ if(rollback_mode){if(mountcontext(0)){if(mountcontext(1))goto done;root_rw=1;if(
  /* Private p9 lease: no competing ordinary-file transaction. */
  lockfd=parentfd("/user/pandanote/state/normal-install.lock",1,name);if(lockfd<0)goto done;
  int parent=lockfd;lockfd=openat(parent,name,O_RDWR|O_CREAT|O_NOFOLLOW|O_CLOEXEC,0600);close(parent);if(lockfd<0||fstat(lockfd,&st)||!S_ISREG(st.st_mode)||!owner(&st)||st.st_nlink!=1||flock(lockfd,LOCK_EX|LOCK_NB))goto done;
+#ifdef PANDANOTE_OTA_UPGRADE
+ if(pandanote_ota_final_check())goto done;
+#endif
  if(rollback_mode){if(rescue_handoff()||identity())goto done;if(!root_rw&&remountroot(1))goto done;pointer_done=entry_done=1;if(restore())goto done;phase("rolled-back-root-ro");status=0;goto done;}
  if(rescue_handoff()||identity()||qt_stopped()||mountcontext(0)||makebackup())goto done;
  if(remountroot(1))goto done;alarm(120);if(phase("root-rw"))goto failed;

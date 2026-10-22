@@ -40,7 +40,7 @@ static void logExit(const char *reason,int code) {
 }
 class RuntimeShell:public ReaderShell {
 public:
-    explicit RuntimeShell(const QString &syncCache="/tmp/pandanote-reader-cache"):ReaderShell(Content()),refreshTimer_(startTimer(30000)),timeoutTimer_(0),loggedExit_(false),powerTimer_(0),nextPowerOpen_(0),suspendArmed_(false),suspendPending_(false),pendingWakeActivity_(false),pendingWakeAction_(NoPowerAction),suspendAt_(0),suspendPendingAt_(0),suspendCounter_(0),sync_(syncCache),syncTimer_(0),nextPoll_(0),lastContact_(0) { syncClock_.start();systemClockStatus_=QString::fromUtf8("系统时钟：尚未校时");setConnectionStatus(QString::fromUtf8("离线 · 尚未配置 HTTPS 与 USB 信任资料")); }
+    explicit RuntimeShell(const QString &syncCache="/tmp/pandanote-reader-cache"):ReaderShell(Content()),refreshTimer_(startTimer(30000)),timeoutTimer_(0),loggedExit_(false),powerTimer_(0),nextPowerOpen_(0),suspendArmed_(false),suspendPending_(false),pendingWakeActivity_(false),pendingWakeAction_(NoPowerAction),suspendAt_(0),suspendPendingAt_(0),suspendCounter_(0),sync_(syncCache),syncTimer_(0),nextPoll_(0),lastContact_(0),otaClockTrusted_(false) { syncClock_.start();systemClockStatus_=QString::fromUtf8("系统时钟：尚未校时");setConnectionStatus(QString::fromUtf8("离线 · 尚未配置 HTTPS 与 USB 信任资料")); }
     bool configurePowerKeys(){if(!power_.open())return false;powerClock_.start();powerTimer_=startTimer(25);logRecord("POWER_KEYS","\"available\":true");return true;}
     bool loadCached() { Content c=sync_.cachedContent();if(c.schema!=1)return false;current_=c;setContent(c);return true; }
     bool loadSyncConfiguration(const QString &path) {
@@ -56,9 +56,11 @@ public:
         DeviceEndpoint candidate;QString error;if(!parseDeviceEndpoint(endpoint,&candidate,&error)||!candidate.tls||profile_.certificatePem.isEmpty()||token.size()<16||token.size()>512||!QRegExp("[A-Za-z0-9._~-]+").exactMatch(QString::fromLatin1(token))) { setConnectionStatus(QString::fromUtf8("配置未应用：需要 HTTPS、USB 预置证书与有效设备凭据"));return false; }
         http_.cancel();candidate.certificatePem=profile_.certificatePem;candidate.certificateSha256=profile_.certificateSha256;candidate.bootstrapEpoch=profile_.bootstrapEpoch;endpoint_=candidate;token_.fill('\0');token_=token;setEndpointLabel(endpoint);if(!syncTimer_)syncTimer_=startTimer(50);nextPoll_=syncClock_.elapsed();setConnectionStatus(QString::fromUtf8("同步参数已应用；等待认证同步"));return true;
     }
+    bool otaTimeTrusted()const{return otaClockTrusted_;}
     void syncRequested() { if(syncTimer_){nextPoll_=0;setSyncActivity(true);}else{setConnectionStatus(QString::fromUtf8("请先配置 HTTPS 与 USB 信任资料、设备凭据"));setSyncActivity(false);} }
     void contentPainted(const QString &version) { sync_.painted(version); }
     void syncTick() {
+        if(otaInstalling()){http_.cancel();return;}
         int status=0;QByteArray body;QString error;bool received=false;
         bool manifest=sync_.request().path=="/reader/v1/manifest";
         int result=http_.poll(&status,&body,&error);
@@ -70,6 +72,7 @@ public:
             // cached content or the developer display anchor for system time.
             SystemClockResult clock=applyAuthenticatedTime(received,sync_.freshEpoch(),*this,http_);
             if(received&&sync_.freshEpoch()>0){lastContact_=sync_.freshEpoch();maintenance_.authenticatedContact();}
+            if(clock.status==SystemClockResult::Applied)otaClockTrusted_=true;
             if(clock.status!=SystemClockResult::Skipped){
                 bool applied=clock.status==SystemClockResult::Applied;
                 systemClockStatus_=applied?QString::fromUtf8("系统时钟：已按认证 UTC 校准"):
@@ -203,7 +206,7 @@ protected:
     void keyPressEvent(QKeyEvent *event) { event->ignore(); }
 private:
     QString systemClockStatus_;Content current_;int refreshTimer_,timeoutTimer_;bool loggedExit_;int powerTimer_;qint64 nextPowerOpen_;PowerKeys power_;bool suspendArmed_,suspendPending_,pendingWakeActivity_;PowerAction pendingWakeAction_;StandbyMaintenance maintenance_;qint64 suspendAt_,suspendPendingAt_;unsigned suspendCounter_;char suspendGeneration_[49],suspendToken_[49];QElapsedTimer powerClock_;
-    StartupSyncRetry startupRetry_;DeviceSync sync_;DeviceHttp http_;DeviceEndpoint endpoint_,profile_;QByteArray token_;QElapsedTimer syncClock_;int syncTimer_;qint64 nextPoll_,lastContact_;
+    StartupSyncRetry startupRetry_;DeviceSync sync_;DeviceHttp http_;DeviceEndpoint endpoint_,profile_;QByteArray token_;QElapsedTimer syncClock_;int syncTimer_;qint64 nextPoll_,lastContact_;bool otaClockTrusted_;
 };
 int main(int argc,char **argv) {
     if(argc==3&&!strcmp(argv[1],"--resolve-host"))return runDnsWorker(argv[2]);

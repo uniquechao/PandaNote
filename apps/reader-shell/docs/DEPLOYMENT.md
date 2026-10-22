@@ -35,6 +35,6 @@ python3 apps/reader-shell/build.py
 
 需要在外部参考目录中准备的新路径包括 `pandanote-analysis/app-development-research/qt-stock-sysroot/` 与 `pandanote-analysis/app-development-research/minimal-qt/`。其文件来源、ABI 与校验值仍需独立验证；仅修改目录名不构成输入验证。
 
-## OTA 自动升级设计
+## OTA 检测与升级
 
-[设备端 OTA 自动升级详细设计](OTA-DESIGN.md) 定义基于精确 NORMAL 普通文件事务的发布签名、设备编排、安装重启和恢复流程。目前交付为详细设计，自动升级组件尚未实现，启用前需要受控引导部署及对应验收。
+[设备端 OTA 自动升级详细设计](OTA-DESIGN.md) 定义基于精确 NORMAL 普通文件事务的发布签名、设备编排、安装重启和恢复流程。设备端已接入手动/每日检测、逐次升级确认、独立 worker 与授权 helper、重启及健康确认。首次启用仍须受控引导部署可信公钥、稳定身份、私有配置和完整基线；`deploy/normal_boot/prepare_ota.py` 只生成接入材料。充电状态未知时推迟安装；主机测试不代表真机闪存、重启或救援验收。

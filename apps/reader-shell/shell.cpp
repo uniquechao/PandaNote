@@ -45,7 +45,7 @@ static void titleLines(QPainter &p,const QRect &r,const QString &raw) {
     p.drawText(QRect(r.x(),r.y(),r.width(),fm.height()+2),Qt::AlignLeft|Qt::AlignVCenter,value.left(used));
     if(used<value.size())p.drawText(QRect(r.x(),r.y()+fm.height()+2,r.width(),fm.height()+2),Qt::AlignLeft|Qt::AlignVCenter,fm.elidedText(value.mid(used),Qt::ElideRight,r.width()));
 }
-ReaderShell::ReaderShell(const Content &content,QWidget *parent,RadioClient *radio):QWidget(parent),standby_(false),shutdownPending_(false),touchGuardUntil_(0),wordIndex_(0),wordScroll_(0),localOffset_(0),noteOffset_(0),noteScroll_(0),wordBack_(false),wordList_(false),noteEditing_(false),noteDelete_(false),systemPanelOpen_(false),quickSyncPending_(false),pressSystem_(false),pressWasOpen_(false),systemReturnActive_(false),batteryCharging_(false),batteryEstimated_(false),batteryChargingKnown_(false),fullRefreshAllowedAt_(0),batteryPercent_(-1),batteryVoltageMv_(-1),systemReturnInput_(-1),systemReturnPage_(Home),fontReady_(false),syncFailed_(false),pressActive_(false),pressPage_(Home),idleTimer_(0),scheduleOffset_(0),press_(-1,-1),radio_(radio?radio:&ownedRadio_),wifiOffset_(0),wifiPressOffset_(0),wifiSwipe_(false),wifiListGesture_(false),wifiDialog_(false),wifiNetworkInfo_(false),wifiScanPending_(false),radioTimer_(0),wifiStatusTimer_(0),wifiStatusDeadline_(0),wifiLinked_(false),wifiSyncLinked_(false),settingsTab_(0),inputField_(-1),keyboardMode_(0),selectedWifi_(-1),selectedBluetooth_(-1),uppercase_(false) {
+ReaderShell::ReaderShell(const Content &content,QWidget *parent,RadioClient *radio):QWidget(parent),otaTimer_(0),otaPaintCount_(0),otaLocked_(false),otaOffered_(false),otaDeferred_(false),otaPreparing_(false),otaSyncBusy_(false),otaProgress_(false),otaPressPrompt_(false),otaPrepareAt_(-1),standby_(false),shutdownPending_(false),touchGuardUntil_(0),wordIndex_(0),wordScroll_(0),localOffset_(0),noteOffset_(0),noteScroll_(0),wordBack_(false),wordList_(false),noteEditing_(false),noteDelete_(false),systemPanelOpen_(false),quickSyncPending_(false),pressSystem_(false),pressWasOpen_(false),systemReturnActive_(false),batteryCharging_(false),batteryEstimated_(false),batteryChargingKnown_(false),fullRefreshAllowedAt_(0),batteryPercent_(-1),batteryVoltageMv_(-1),systemReturnInput_(-1),systemReturnPage_(Home),fontReady_(false),syncFailed_(false),pressActive_(false),pressPage_(Home),idleTimer_(0),scheduleOffset_(0),press_(-1,-1),radio_(radio?radio:&ownedRadio_),wifiOffset_(0),wifiPressOffset_(0),wifiSwipe_(false),wifiListGesture_(false),wifiDialog_(false),wifiNetworkInfo_(false),wifiScanPending_(false),radioTimer_(0),wifiStatusTimer_(0),wifiStatusDeadline_(0),wifiLinked_(false),wifiSyncLinked_(false),settingsTab_(0),inputField_(-1),keyboardMode_(0),selectedWifi_(-1),selectedBluetooth_(-1),uppercase_(false) {
     if(QApplication::overrideCursor())QApplication::changeOverrideCursor(QCursor(Qt::BlankCursor));
     else QApplication::setOverrideCursor(QCursor(Qt::BlankCursor));
     // QApplication has initialized QWS; global visibility is independent of
@@ -115,6 +115,7 @@ QString ReaderShell::statusFingerprint() const {
     return displayClock()+'|'+QString::number(batteryPercent_)+'|'+QString::number(batteryCharging_)+'|'+QString::number(batteryEstimated_)+'|'+QString::number(wifiLinked_);
 }
 void ReaderShell::refreshTime() {
+    if(!otaTimer_)otaInitialize();
     bool batteryChanged=refreshBattery();QString clock=displayClock();bool clockChanged=clock!=statusClock_;statusClock_=clock;
     QString fingerprint=agendaFingerprint(5);
     bool changed=fingerprint!=fingerprint_;fingerprint_=fingerprint;
@@ -188,7 +189,8 @@ void ReaderShell::paintEvent(QPaintEvent *event) {
     }
     drawStatusBar(p);if(systemPanelOpen_)drawSystemPanel(p);
     if(!powerMessage_.isEmpty()){p.fillRect(QRect(24,112,432,80),Qt::white);p.setFont(typeface(font(),24,true));p.drawText(QRect(24,112,432,80),Qt::AlignCenter|Qt::TextWordWrap,powerMessage_);}
-    bool painted=p.end();
+    drawOta(p);
+    bool painted=p.end();if(painted)++otaPaintCount_;
     if(painted&&!systemPanelOpen_&&content_.schema==1&&(page()==Home||page()==Schedule))contentPainted(content_.version);
 }
 void ReaderShell::resetIdle() {
@@ -207,8 +209,10 @@ void ReaderShell::applyAction(Action action,const char *source,int x,int y) {
 }
 void ReaderShell::cancelGesture() { pressActive_=false;pressSystem_=false;wifiListGesture_=false;wifiSwipe_=false;press_=QPoint(-1,-1); }
 void ReaderShell::mousePressEvent(QMouseEvent *event) {
+    if(otaInput()||otaLocked_){cancelGesture();event->accept();return;}
     if(standby_||shutdownPending_||monotonicMs()<touchGuardUntil_){cancelGesture();event->accept();return;}
     if(event->button()==Qt::LeftButton && rect().contains(event->pos())) {
+        otaPressAttempt_=otaAttempt_;otaPressGeneration_=otaGeneration_;otaPressPrompt_=otaPromptVisible();
         press_=event->pos();pressPage_=page();pressActive_=true;wifiSwipe_=false;wifiPressOffset_=wifiOffset_;wifiListGesture_=page()==Control&&settingsTab_==0&&!wifiDialog_&&!wifiNetworkInfo_&&QRect(16,342,448,348).contains(press_);
         pressSystem_=systemPanelOpen_||event->y()<40;pressWasOpen_=systemPanelOpen_;
         if(pressSystem_){wifiListGesture_=false;navigation_.interact(NoAction,monotonicMs());resetIdle();}
@@ -240,9 +244,13 @@ void ReaderShell::mouseMoveEvent(QMouseEvent *event){
  event->accept();
 }
 void ReaderShell::mouseReleaseEvent(QMouseEvent *event) {
+    if(otaLocked_){cancelGesture();event->accept();return;}
     if(standby_||shutdownPending_||monotonicMs()<touchGuardUntil_){cancelGesture();event->accept();return;}
     if(event->button()!=Qt::LeftButton)return;
     if(!pressActive_ || pressPage_!=page()) { cancelGesture();event->accept();return; }
+    bool otaTouch=otaGesture(event->x(),event->y());
+    if(otaPromptVisible()){if(otaTouch)otaTap(event->x(),event->y());cancelGesture();event->accept();return;}
+    if(!pressSystem_&&otaTouch&&otaTap(event->x(),event->y())){cancelGesture();event->accept();return;}
     pressActive_=false;
     if(pressSystem_){
         int dx=event->x()-press_.x(),dy=event->y()-press_.y();
@@ -280,12 +288,14 @@ void ReaderShell::mouseReleaseEvent(QMouseEvent *event) {
     cancelGesture();event->accept();
 }
 void ReaderShell::wheelEvent(QWheelEvent *event) {
+    if(otaLocked_){event->accept();return;}otaInput();
     if(standby_||shutdownPending_||monotonicMs()<touchGuardUntil_){event->accept();return;}
     if(systemPanelOpen_){event->accept();return;}
     if(page()==Schedule)scrollSchedule(event->delta()<0?5:-5);else if(page()==Words||page()==Notes)scrollLocal(event->delta()<0?6:-6);else applyAction(NoAction,"wheel",event->x(),event->y());
     event->accept();
 }
 void ReaderShell::timerEvent(QTimerEvent *event) {
+    if(event->timerId()==otaTimer_){otaTick();return;}
     if(standby_||shutdownPending_)return;
     if(event->timerId()==bt_.timer){bluetoothTick();return;}
     if(event->timerId()==radioTimer_) { if(radio_->poll())finishRadio();return; }
@@ -448,7 +458,7 @@ QString ReaderShell::noteDraftVisibleText()const{QFont f=typeface(font(),20);QSt
 QString ReaderShell::noteVisibleText()const{for(int i=0;i<local_.notes().size();++i)if(local_.notes()[i].id==noteId_)return QStringList(wrappedText(local_.notes()[i].body,typeface(font(),20),432).mid(noteScroll_,14)).join("\n");return QString();}
 bool ReaderShell::configureWorkspace(const QString &path){bool ok=local_.open(path);if(ok){wordIndex_=qBound(0,wordIndex_,qMax(0,local_.words().size()-1));localOffset_=0;noteOffset_=0;noteDraft_=local_.draft();noteEditing_=false;}localMessage_=ok?text("已打开本地工作目录"):text("工作目录不可用：")+localError(local_.error());update();return ok;}
 QString ReaderShell::workspaceStatus()const{return local_.available()?text("本地写入目录：")+local_.directory()+text("\n持久磁盘挂载：未核验（由启动环境确认）"):text("未配置本地写入目录；请使用 --workspace-dir ABS\n当前不能保存单词进度或笔记。");}
-void ReaderShell::drawInformation(QPainter &p){p.setFont(typeface(font(),19));QString version=content_.version.isEmpty()?text("尚无内容"):content_.version;p.drawText(QRect(24,163,432,607),Qt::TextWordWrap,text("PandaNote\n")+text("电量：")+(batteryPercent_<0?text("暂不可用"):(batteryEstimated_?text("约"):QString())+QString::number(batteryPercent_)+"%")+(batteryEstimated_?text("（电压估算）"):QString())+text("\n电池电压：")+(batteryVoltageMv_<0?text("暂不可用"):QString::number(batteryVoltageMv_/1000.0,'f',3)+" V")+text("\n充电状态：")+(!batteryChargingKnown_?text("暂不可用"):batteryCharging_?text("正在充电"):text("未充电"))+"\n"+displayStatus()+text("\n内容版本：")+version+"\n\n"+connectionStatus_+text("\n\n无线信息：到设备设置查看实时状态\n\n")+workspaceStatus()+text("\n\n短按电源键待机，再短按唤醒。长按约 3 秒关机。"));}
+void ReaderShell::drawInformation(QPainter &p){p.setFont(typeface(font(),17));QString version=content_.version.isEmpty()?text("尚无内容"):content_.version;p.drawText(QRect(24,163,432,430),Qt::TextWordWrap,text("PandaNote\n")+text("电量：")+(batteryPercent_<0?text("暂不可用"):(batteryEstimated_?text("约"):QString())+QString::number(batteryPercent_)+"%")+(batteryEstimated_?text("（电压估算）"):QString())+text("\n电池电压：")+(batteryVoltageMv_<0?text("暂不可用"):QString::number(batteryVoltageMv_/1000.0,'f',3)+" V")+text("\n充电状态：")+(!batteryChargingKnown_?text("暂不可用"):batteryCharging_?text("正在充电"):text("未充电"))+"\n"+displayStatus()+text("\n内容版本：")+version+"\n\n"+connectionStatus_+text("\n\n无线信息：到设备设置查看实时状态\n\n")+workspaceStatus()+text("\n\n短按电源键待机，再短按唤醒。长按约 3 秒关机。"));p.setFont(typeface(font(),18));p.drawText(QRect(24,608,432,84),Qt::TextWordWrap,text("当前程序：")+otaCurrent_+"\n"+otaMessage_);drawButton(p,QRect(24,704,432,56),otaOffered_?text("升级到 ")+otaVersion_:text("检查软件更新"));}
 void ReaderShell::drawWords(QPainter &p){
  drawButton(p,QRect(330,154,126,48),wordList_?text("学习"):text("列表"));p.setFont(typeface(font(),20));p.drawText(QRect(24,155,290,48),Qt::AlignVCenter,QString("%1 / %2").arg(local_.words().isEmpty()?0:wordIndex_+1).arg(local_.words().size()));
  if(local_.words().isEmpty()){p.drawText(QRect(24,240,432,260),Qt::TextWordWrap,text("没有单词卡。\n先配置本地工作目录，再用 local_apps_tool.py import-words 导入 UTF-8 TSV：每行 正面<TAB>背面。\n无预置示例数据。"));}
@@ -560,6 +570,7 @@ void ReaderShell::systemPanelTap(int x,int y){
  }
 }
 void ReaderShell::setSyncActivity(bool active){
+ otaSyncBusy_=active;
  if(quickSyncPending_==active)return;quickSyncPending_=active;
  if(!active&&quickMessage_==text("正在同步"))quickMessage_=syncFailed_?text("同步失败，保留缓存"):text("同步请求已结束");
  if(systemPanelOpen_)update(QRect(0,40,480,360));
@@ -622,6 +633,7 @@ void ReaderShell::drawPowerScreen(QPainter &p){
  p.drawLine(40,668,440,668);p.setFont(typeface(font(),24));p.drawText(QRect(40,692,400,48),Qt::AlignCenter,text("PandaNote"));
 }
 void ReaderShell::shortPowerPress(){
+ if(otaLocked_)return;otaInput();
  if(shutdownPending_)return;
  if(!standby_){
   if(!persistPowerDraft())return;
@@ -632,6 +644,7 @@ void ReaderShell::shortPowerPress(){
  }
 }
 void ReaderShell::longPowerPress(){
+ if(otaLocked_)return;otaInput();
  if(shutdownPending_||!persistPowerDraft())return;
  shutdownPending_=true;standby_=false;powerMessage_.clear();cancelGesture();clearSecrets();systemPanelOpen_=false;resetIdle();standbyChanged(true);QWidget::repaint();
  if(!shutdownRequested()){shutdownPending_=false;standby_=true;powerMessage_=text("关机请求失败");standbyFingerprint_.clear();standbyStatusFingerprint_.clear();refreshStandbySnapshot();}
@@ -646,6 +659,7 @@ void ReaderShell::systemStandbyCompleted(bool resumed){
 }
 
 bool ReaderShell::listNavigate(int direction){
+ if(otaLocked_)return false;otaInput();
  if(direction!=-1&&direction!=1)return false;
  // A hardware key cancels any unfinished touch, even when this page cannot
  // scroll. Its later release must never activate a newly exposed row/button.

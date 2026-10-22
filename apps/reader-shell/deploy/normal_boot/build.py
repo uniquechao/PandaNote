@@ -75,6 +75,14 @@ def build(native, native_sha, reference, radio_binary, output,native_source=None
   pinned(native_source,name,digest)
  if 'normal-suspend-v2' not in meta.get('capabilities',[]):raise ValueError('native normal-suspend-v2 capability required')
  helper_raw,helper_elf=suspend_capture(ROOT/'build/suspend-helper' if suspend_helper_dir is None else suspend_helper_dir,suspend_helper_sha256)
+ if 'device-ota-v1' in meta.get('capabilities',[]):
+  for name in ('ota/ota-worker.mipsel','ota/pandanote-ota-upgrade.mipsel','ota/helper-manifest.json'):
+   if name not in release:raise ValueError('native OTA closure incomplete')
+  ota_meta=json.loads(release['ota/helper-manifest.json'])
+  if ota_meta.get('application')!='pandanote-ota-upgrade' or ota_meta.get('profile')!='device-ota-v1' or ota_meta.get('execution_performed') is not False:raise ValueError('OTA helper provenance required')
+  for name,digest in ota_meta['source_sha256'].items():pinned(native_source,name,digest)
+  for name,digest in ota_meta['startup_sha256'].items():pinned(native_source/'build-support',name,digest)
+  if sha(release['ota/pandanote-ota-upgrade.mipsel'])!=ota_meta['artifact_sha256']:raise ValueError('OTA helper artifact changed')
  release['power/suspend-helper.mipsel']=helper_elf;release['power/suspend-helper-manifest.json']=helper_raw
  analysis=reference/'pandanote-analysis/app-development-research'
  release['hardware/focaltech_touch-NO-UPGRADE.ko']=pinned(analysis/'touch-ram-guard','focaltech_touch-RAM-NO-UPGRADE.ko',TOUCH_SHA)
@@ -92,7 +100,7 @@ def build(native, native_sha, reference, radio_binary, output,native_source=None
  names=re.findall(r'(?m)^(radio_[a-z0-9_]+)\(\)',common)
  common=functions(common,[n for n in names if n!='radio_guard_ready'])
  common=common.replace('radio_prepare_runtime() {','radio_prepare_volatile_runtime() {')
- source_files=('early.in','service.in','hardware.in','policy.in','inittab.in','suspend.in','suspend_helper.c','build_suspend.py','build.py','tests/test_list_keys_hardware.py','tests/test_hardware_dither.py')
+ source_files=('early.in','service.in','hardware.in','policy.in','inittab.in','suspend.in','suspend_helper.c','build_suspend.py','ota.in','build_apply.py','build.py','tests/test_list_keys_hardware.py','tests/test_hardware_dither.py')
  sources={n:sha(regular(ROOT,n)) for n in source_files}
  if upgrade is not None:sources['upgrade_profile.py']=sha(regular(ROOT,'upgrade_profile.py'))
  sources['../writable_boot/policy.sh']=sha((DEPLOY/'writable_boot/policy.sh').read_bytes())
@@ -150,29 +158,30 @@ esac
   if '/opt/'==path[:5]:path='/run/pandanote-opt'+path
   factory[path]=item['sha256']
  primitive_source=(DEPLOY/'writable_boot/policy.sh').read_text()
- primitive=functions(primitive_source,['dev_'+n for n in PRIMITIVES]).replace('dev_','normal_')
+ primitive=functions(primitive_source,['dev_'+n for n in PRIMITIVES]).replace('dev_','normal_').replace('app|adbd|runtime)', 'app|adbd|runtime|ota)')
+ supervisor=(DEPLOY/'writable_boot/child-supervisor.sh').read_bytes().replace(b'app|adbd|runtime)',b'app|adbd|runtime|ota)')
  replacements={'@SYSTEM@':system,'@BOOT_ID@':boot_id,'@NATIVE_SHA@':native_sha,
-  '@RELEASE_INDEX_SHA@':sha(index),'@OWNED_PRIMITIVES@':primitive}
+  '@SUPERVISOR_SHA@':sha(supervisor),'@RELEASE_INDEX_SHA@':sha(index),'@OWNED_PRIMITIVES@':primitive}
  def render(name):
   text=(ROOT/name).read_text()
   for old,new in replacements.items():text=text.replace(old,new)
   if re.search('@[A-Z_]+@',text):raise ValueError('unexpanded template')
   return text.encode()
- system_files={n[:-3]+'.sh':render(n) for n in ('early.in','service.in','hardware.in','policy.in','suspend.in')}
- system_files['child-supervisor.sh']=(DEPLOY/'writable_boot/child-supervisor.sh').read_bytes()
+ system_files={n[:-3]+'.sh':render(n) for n in ('early.in','service.in','hardware.in','policy.in','suspend.in','ota.in')}
+ system_files['child-supervisor.sh']=supervisor
  system_files['factory.sha256']=''.join(d+'  '+p+'\n' for p,d in sorted(factory.items())).encode()
  system_files['SHA256SUMS']=''.join(sha(d)+'  '+n+'\n' for n,d in sorted(system_files.items())).encode()
  targets=[];output.mkdir(parents=True,exist_ok=False)
  def store(path,data,mode,role):
   source='files/'+path.lstrip('/');p=output/source;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data);p.chmod(mode)
   targets.append(dict(path=path,source=source,sha256=sha(data),bytes=len(data),mode=mode,role=role))
- for name,data in sorted(release.items()):store('/user/pandanote/apps/releases/'+native_sha+'/'+name,data,0o700 if name in ('reader-shell.mipsel','power/suspend-helper.mipsel') else 0o600,'release')
+ for name,data in sorted(release.items()):store('/user/pandanote/apps/releases/'+native_sha+'/'+name,data,0o700 if name in ('reader-shell.mipsel','power/suspend-helper.mipsel','ota/ota-worker.mipsel','ota/pandanote-ota-upgrade.mipsel') else 0o600,'release')
  for name,data in sorted(system_files.items()):store(system+'/'+name,data,0o600,'system')
  store('/user/pandanote/apps/current',(native_sha+'\n').encode(),0o600,'pointer')
  store('/etc/inittab',render('inittab.in'),0o644,'entry')
  old=reference/'pandanote-analysis/factory-backup-20261020/inspection/etc__inittab.txt'
  result=dict(schema=1,profile='normal-persistent-v1',boot_id=boot_id,native_sha256=native_sha,
-  device_apply_supported=False,transport=None,capabilities=['normal-suspend-v2'],suspend_helper_manifest_sha256=sha(helper_raw),adc_module_sha256=ADC_SHA,scope='offline ordinary-file clone candidate',
+  device_apply_supported=False,transport=None,capabilities=['normal-suspend-v2']+(['device-ota-v1'] if 'device-ota-v1' in meta.get('capabilities',[]) else []),suspend_helper_manifest_sha256=sha(helper_raw),adc_module_sha256=ADC_SHA,scope='offline ordinary-file clone candidate',
   old_inittab_sha256=upgrade['old_inittab_sha256'] if upgrade is not None else sha(old.read_bytes()),files=targets,sources=sources,
   forbidden_writes=['p1/kernel','bootloader','GPT','DDR','touch-firmware','boot0','boot1','RPMB'],
   pending=['physical normal boot before-userspace helper/touch check','normal boot display/touch/USB acceptance',

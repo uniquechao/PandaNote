@@ -68,5 +68,55 @@ def main(normal_upgrade=False):
         return 0
     except Exception as e:print('FAIL',str(e));return 1
     finally:(OUT/'commands.json').write_text(json.dumps(COMMANDS,indent=2)+'\n')
+def main_ota():
+    """编译独立授权入口，保留原有 NORMAL/RAM 的校验边界。"""
+    global WORK,OUT
+    WORK='/work/pandanote-ota-upgrade';OUT=ROOT/'build/ota-tool'
+    OUT.mkdir(parents=True,exist_ok=True);(OUT/'manifest.json').unlink(missing_ok=True)
+    shell=ROOT.parents[1]
+    import sys
+    sys.path.insert(0,str(shell/'tests'))
+    import run as common
+    try:
+        tls=json.loads((shell/'build/tls-provenance.json').read_text())
+        if tls['configSha256']!=sha(shell/'third_party/mbedtls/pandanote_config.h') or tls['librarySha256']!=sha(shell/'build/libpandanote-tls.a'):raise RuntimeError('TLS provenance mismatch')
+        tlsroot=common.WORK+'/tls'
+        if run(['docker','exec',CONTAINER,'sha256sum',tlsroot+'/libpandanote-tls.a']).split()[0]!=tls['librarySha256']:raise RuntimeError('compiler TLS mismatch')
+        runtime={}
+        for item in json.loads((STOCK/'original-library-provenance.json').read_text()):
+            if item['name'] in ('libc.so.6','ld-linux-mipsn8.so.1','libstdc++.so.6','libgcc_s.so.1'):
+                if sha(STOCK/item['name'])!=item['sha256'] or run(['docker','exec',CONTAINER,'sha256sum',LIB+'/'+item['name']]).split()[0]!=item['sha256']:raise RuntimeError('runtime provenance mismatch')
+                runtime[item['name']]=item['sha256']
+        if set(runtime)!={'libc.so.6','ld-linux-mipsn8.so.1','libstdc++.so.6','libgcc_s.so.1'}:raise RuntimeError('runtime closure incomplete')
+        files=['ota/core.h','ota/device.h','ota/json.cpp','ota/storage.cpp','ota/authorization.cpp','ota/device.cpp','ota/crypto.cpp','ota/power.cpp','battery.cpp','battery_posix.cpp','battery.h','deploy/normal_boot/apply_tool.c','deploy/normal_boot/upgrade_wire.h','deploy/normal_boot/upgrade_target.h','deploy/normal_boot/build_apply.py','third_party/sha256/sha256.c','third_party/sha256/sha256.h','third_party/mbedtls/pandanote_config.h']
+        startup=['start.S','entry.h','csu.cpp','libio-init.c']
+        run(['docker','exec',CONTAINER,'mkdir','-p',WORK+'/ota',WORK+'/deploy/normal_boot',WORK+'/third_party/sha256',WORK+'/third_party/mbedtls',WORK+'/build-support'])
+        for name in files:run(['docker','cp',shell/name,CONTAINER+':'+WORK+'/'+name])
+        for name in startup:
+            if sha(shell/'build-support'/name)!=sha(REFERENCE/'pandanote-analysis/app-development-research/minimal-qt/build-support'/name):raise RuntimeError('startup provenance mismatch')
+            run(['docker','cp',shell/'build-support'/name,CONTAINER+':'+WORK+'/build-support/'+name])
+        abi=['-EL','-march=mips32r2','-mabi=32','-mhard-float','-mfp64','-mnan=2008','-fPIC','-ffunction-sections','-fdata-sections','-O2','-isystem','/usr/mipsisa32r6el-linux-gnu/include','-Ithird_party/sha256','-Ibuild-support','-I'+tlsroot+'/source/include','-I'+tlsroot,'-DMBEDTLS_CONFIG_FILE="pandanote_config.h"']
+        objects=[]
+        for name in files+['build-support/'+n for n in startup]:
+            if not name.endswith(('.c','.cpp','.S')):continue
+            obj=name.replace('/','_')+'.o';objects.append(obj)
+            compiler='mipsel-linux-gnu-g++' if name.endswith('.cpp') else 'mipsel-linux-gnu-gcc'
+            inside([compiler,*abi,*(['-std=c++98','-fno-exceptions','-fno-rtti'] if name.endswith('.cpp') else ['-D_GNU_SOURCE']),'-DPANDANOTE_NORMAL_UPGRADE','-DPANDANOTE_OTA_UPGRADE','-c',name,'-o',obj])
+        binary='pandanote-ota-upgrade.mipsel'
+        inside(['mipsel-linux-gnu-ld','-EL','-m','elf32ltsmip','-e','__start','--dynamic-linker','/lib/ld-linux-mipsn8.so.1','-rpath-link',LIB,'-L',LIB,'--no-allow-shlib-undefined','-z','noexecstack','-z','relro','-z','now','--gc-sections',*objects,tlsroot+'/libpandanote-tls.a','-l:libstdc++.so.6','-l:libgcc_s.so.1','-l:libc.so.6','-o',binary])
+        elf=inside(['mipsel-linux-gnu-readelf','-h','-l','-A',binary]);dyn=inside(['mipsel-linux-gnu-readelf','-d','-V','--dyn-syms','--wide',binary])
+        for marker in ['ELF32','little endian','mips32r2','nan2008','o32','/lib/ld-linux-mipsn8.so.1','Hard float (32-bit CPU, 64-bit FPU)']:
+            if marker not in elf:raise RuntimeError('ABI marker missing: '+marker)
+        for marker in ['GLIBC_2.34','(INIT_ARRAY)','(FINI_ARRAY)','libQtGui','libQtCore']:
+            if marker in dyn:raise RuntimeError('unsupported helper dependency: '+marker)
+        run(['docker','cp',CONTAINER+':'+WORK+'/'+binary,OUT/binary]);(OUT/binary).chmod(0o600)
+        (OUT/'elf.txt').write_text(elf+dyn)
+        (OUT/'manifest.json').write_text(json.dumps(dict(schema=1,application='pandanote-ota-upgrade',profile='device-ota-v1',execution_performed=False,source_sha256={n:sha(shell/n) for n in files},startup_sha256={n:sha(shell/'build-support'/n) for n in startup},stock_runtime_sha256=runtime,tls_provenance=tls,artifact_sha256=sha(OUT/binary),artifact_bytes=(OUT/binary).stat().st_size),indent=2)+'\n')
+        print('PASS trusted OTA helper compile and ELF inspection only:',OUT/binary);return 0
+    except Exception as e:print('FAIL',str(e));return 1
+    finally:(OUT/'commands.json').write_text(json.dumps(COMMANDS,indent=2)+'\n')
+
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--normal-upgrade',action='store_true');args=parser.parse_args();raise SystemExit(main(args.normal_upgrade))
+    parser=argparse.ArgumentParser(description=__doc__)
+    modes=parser.add_mutually_exclusive_group();modes.add_argument('--normal-upgrade',action='store_true');modes.add_argument('--ota-upgrade',action='store_true')
+    args=parser.parse_args();raise SystemExit(main_ota() if args.ota_upgrade else main(args.normal_upgrade))

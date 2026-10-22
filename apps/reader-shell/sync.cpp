@@ -17,11 +17,16 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stddef.h>
+#if defined(__mips__)
 extern "C" int __fxstat(int,int,struct stat *);
 typedef char SyncStatSize[sizeof(struct stat)==144?1:-1];
 typedef char SyncStatMode[offsetof(struct stat,st_mode)==20?1:-1];
 typedef char SyncStatUid[offsetof(struct stat,st_uid)==28?1:-1];
 typedef char SyncStatBytes[offsetof(struct stat,st_size)==48?1:-1];
+static int syncStat(int fd,struct stat *s){return __fxstat(3,fd,s);}
+#else
+static int syncStat(int fd,struct stat *s){return ::fstat(fd,s);}
+#endif
 extern "C" {
 #include "third_party/sha256/sha256.h"
 }
@@ -81,7 +86,7 @@ bool HttpReply::feed(const QByteArray &bytes,int limit,QString *error){
 }
 bool validSyncPath(const QString &path){QByteArray b=path.toUtf8();return path.startsWith('/')&&path!="/"&&b.size()<=4096&&!b.contains('\0')&&!path.endsWith('/')&&!path.contains("//")&&!path.split('/').contains(".")&&!path.split('/').contains("..");}
 namespace {
-bool syncDirectoryFd(int fd,bool privateLeaf,bool publicTmp){struct stat st;if(fd<0||__fxstat(3,fd,&st)||!S_ISDIR(st.st_mode))return false;if(privateLeaf)return st.st_uid==::geteuid()&&(st.st_mode&07777)==0700;return ((st.st_uid==0||st.st_uid==::geteuid())&&!(st.st_mode&0022))||(publicTmp&&st.st_uid==0&&(st.st_mode&07777)==01777);}
+bool syncDirectoryFd(int fd,bool privateLeaf,bool publicTmp){struct stat st;if(fd<0||syncStat(fd,&st)||!S_ISDIR(st.st_mode))return false;if(privateLeaf)return st.st_uid==::geteuid()&&(st.st_mode&07777)==0700;return ((st.st_uid==0||st.st_uid==::geteuid())&&!(st.st_mode&0022))||(publicTmp&&st.st_uid==0&&(st.st_mode&07777)==01777);}
 // Open the first absolute component directly: retained QEMU sysroot rewrites
 // open("/") but not this explicit path. All remaining traversal is openat.
 int syncDirectory(const QString &path,bool privateLeaf,bool create){
@@ -98,7 +103,7 @@ bool syncCacheDirectory(const QString &path,bool create){int fd=syncDirectory(pa
 bool readSyncFile(const QString &path,int limit,bool privateFile,QByteArray *out){
  if(!out||limit<1||!validSyncPath(path))return false;int parent=syncDirectory(path.left(path.lastIndexOf('/')),false,false);if(parent<0)return false;
  int fd=::openat(parent,path.section('/',-1).toUtf8().constData(),O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK);::close(parent);if(fd<0)return false;struct stat st;
- bool safe=!__fxstat(3,fd,&st)&&S_ISREG(st.st_mode)&&st.st_uid==::geteuid()&&!(st.st_mode&(privateFile?0077:0022))&&st.st_size>0&&st.st_size<=limit;
+ bool safe=!syncStat(fd,&st)&&S_ISREG(st.st_mode)&&st.st_uid==::geteuid()&&!(st.st_mode&(privateFile?0077:0022))&&st.st_size>0&&st.st_size<=limit;
  QByteArray bytes;char buffer[4096];while(safe&&bytes.size()<=limit){ssize_t n=::read(fd,buffer,qMin(int(sizeof buffer),limit+1-bytes.size()));if(n<0&&errno==EINTR)continue;if(n<0){safe=false;break;}if(!n)break;bytes.append(buffer,int(n));}
  ::close(fd);if(!safe||bytes.size()!=st.st_size||bytes.size()>limit){bytes.fill('\0');return false;}*out=bytes;return true;
 }
