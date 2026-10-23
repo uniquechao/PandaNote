@@ -22,3 +22,6 @@ external-inputs/
 *.o
 *.a
 *.mipsel
+
+# 已校验但不提交的第三方构建缓存
+.local-deps/

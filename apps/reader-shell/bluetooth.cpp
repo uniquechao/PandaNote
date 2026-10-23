@@ -13,11 +13,16 @@
 #include <errno.h>
 #include <stddef.h>
 #include <string.h>
+#if defined(__mips__)
 extern "C" int __fxstat(int,int,struct stat *);
 extern "C" int __fxstatat(int,int,const char *,struct stat *,int);
 typedef char BluetoothStatSize[sizeof(struct stat)==144?1:-1];
 typedef char BluetoothStatMode[offsetof(struct stat,st_mode)==20?1:-1];
 typedef char BluetoothStatUid[offsetof(struct stat,st_uid)==28?1:-1];
+#else
+static int __fxstat(int,int fd,struct stat*s){return ::fstat(fd,s);}
+static int __fxstatat(int,int fd,const char*p,struct stat*s,int flags){return ::fstatat(fd,p,s,flags);}
+#endif
 static bool trustedDirectory(int fd,bool final){struct stat s;if(fd<0||__fxstat(3,fd,&s)||!S_ISDIR(s.st_mode))return false;if(final)return s.st_uid==::geteuid()&&(s.st_mode&07777)==0700;return (s.st_uid==0||s.st_uid==::geteuid())&&!(s.st_mode&0022);}
 static int parentDirectory(const QString &path){QStringList parts=path.mid(1).split('/');parts.removeLast();if(parts.isEmpty())return -1;int fd=::open(("/"+parts[0]).toUtf8().constData(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);for(int i=0;fd>=0&&i<parts.size();++i){bool tmp=i==0&&i+1<parts.size()&&parts[i]=="tmp";struct stat s;bool ok=trustedDirectory(fd,i==parts.size()-1)||(tmp&&!__fxstat(3,fd,&s)&&S_ISDIR(s.st_mode)&&s.st_uid==0&&(s.st_mode&07777)==01777);if(!ok){::close(fd);return -1;}if(i+1<parts.size()){int next=::openat(fd,parts[i+1].toUtf8().constData(),O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);::close(fd);fd=next;}}return fd;}
 static bool socketStat(int dir,const QByteArray &name,struct stat *s){return !__fxstatat(3,dir,name.constData(),s,AT_SYMLINK_NOFOLLOW)&&S_ISSOCK(s->st_mode)&&s->st_uid==::geteuid()&&(s->st_mode&07777)==0600;}

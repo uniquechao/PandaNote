@@ -15,16 +15,17 @@ class FakeSigner:
         return dict(schema=1,key_id='fixture',payload_b64=b64(raw),signature_b64=b64(b'fixture-signature'))
 
 def package(directory,version,old=None,snapshot=None,sb='c'*64):
-    native_raw=encode(dict(artifacts=[dict(path='reader-shell.mipsel',bytes=len(version),sha256=digest(version.encode()))]))
+    native_raw=encode(dict(artifacts=[dict(path='reader-shell.mipsel',bytes=len(version.encode()),sha256=digest(version.encode()))]))
     native=digest(native_raw);boot=digest(version.encode())[:24];release='/user/pandanote/apps/releases/'+native+'/';system='/etc/pandanote-system/'+boot+'/'
     data={release+'manifest.json':native_raw,release+'reader-shell.mipsel':version.encode(),system+'service.sh':b'service',system+'policy.sh':b'policy',system+'child-supervisor.sh':b'supervisor'}
+    data.update({release+'ota/ota-worker.mipsel':b'fixture-worker',release+'ota/pandanote-ota-upgrade.mipsel':b'fixture-helper',release+'ota/helper-manifest.json':b'{}'})
     for base,index in ((release,'release.sha256'),(system,'SHA256SUMS')):
         data[base+index]=''.join(digest(raw)+'  '+p.removeprefix(base)+'\n' for p,raw in sorted(data.items()) if p.startswith(base)).encode()
     data['/user/pandanote/apps/current']=(native+'\n').encode();data['/etc/inittab']=(system+'service.sh\n').encode()
     directory.mkdir();files=[]
     for path,raw in data.items():
         role='pointer' if path.endswith('/current') else 'entry' if path=='/etc/inittab' else 'release' if path.startswith(release) else 'system'
-        mode=0o700 if path.endswith('reader-shell.mipsel') else 0o644 if role=='entry' else 0o600
+        mode=0o700 if path.endswith('.mipsel') else 0o644 if role=='entry' else 0o600
         name='files/'+path[1:];target=directory/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw);target.chmod(mode)
         files.append(dict(path=path,source=name,mode=mode,bytes=len(raw),sha256=digest(raw),role=role))
     manifest=dict(schema=1,profile='normal-persistent-v1',device_apply_supported=False,native_sha256=native,boot_id=boot,files=files,sources={})

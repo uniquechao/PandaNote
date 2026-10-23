@@ -37,10 +37,17 @@
 - OTA helper 的路径和摘要固定在首次受控接入配置，须与管理端登记一致；升级后的 worker 继续执行这份预安装 helper，不能自动选择下载包的新 helper。对应引导 release 必须保留，更换 helper 走受控接入。
 - native 完整产物包含无 QtGui 的 worker、独立授权 helper 及 helper 来源清单，复用管理端原有 native 输入树；首次接入材料不能覆盖在用状态或重置高水位。跨启动保留 APPLYING 不确定性，健康预算不因同次启动 worker 重启而重置。
 
+- 授权续期保留同一安装 attempt，并轮换 nonce/generation、清除确认；重启后的未安装阶段也须重新确认。`authorization.json` 原子绑定 request/offer，固定旧 helper 通过匹配的兼容导出读取；权威快照损坏不退读旧快照，历史已丢失 ID 的设备走受控核对。
+- 准备交接为绑定 attempt、generation、boot_generation、native 身份的 90 秒租期；UI 撤销与 APPLYING 提交共用短时 `prepare.lock`，持久化取消证据防止 worker 复活后重放 ready。超时处理必须先于电源、唤醒与网络退避返回；不确定安装不得解锁、杀组或重装。服务只对已退出且持久态安全的 worker 每次启动最多重启三次。
+- 管理端概览与任务详情共用有效事件选择，`observed` 与 `last_event` 分离；报告接收时间不代表执行顺序。有效阶段不因旧任务或迟到事件倒退，矛盾终态仍暂停；软件版本只从已确认完整基线对应的发布或同一首次接入基线取值，缺失不猜测。
+
+- `apps/reader-shell/toolchain.py` 为 Mac/Linux 编译准备入口：固定基础镜像建立交叉编译器，编译物件核验 ABI，独立构建 MIPS TLS，再核验私有 Qt/原厂 SDK 后调用既有完整构建器。编译容器无设备、无网络、根只读，按当前用户运行；复制需保留属主，避免能力移除后无权访问工作目录。生成的 native 白名单包不能直接作为完整 NORMAL 固件派发；Web 制品上传仍需明确与受控输入、基线和签名的绑定。
+
 ## 接口与测试
 
-- 设备 OTA 主机定向入口：`python3 apps/reader-shell/tests/run_ota_host.py`，预置固定 MbedTLS 3.6.7 源码与 Qt5 主机开发库；运行生产验签、存储、恢复判定及 worker 确认/推迟状态机，不能代替目标 Qt4/MIPS 或真实闪存验收。
-- 管理端定向测试：`tests/test_ota_{store,publish,reports,api,signer}.py`；前端 `src/ota.test.tsx`。主机两轮合成完整闭包与签名向量不代表真实闪存、重启或恢复验收。
+- 编译准备定向入口：`python3 -m unittest discover -s apps/reader-shell/tests -p test_toolchain.py -v`，验证 SDK 摘要/路径、容器挂载/身份、并发互斥与 native 包边界；合成 SDK 夹具不代表真实原厂材料。
+- 设备 OTA 主机定向入口：`python3 apps/reader-shell/tests/run_ota_host.py`，预置固定 MbedTLS 3.6.7 源码与 Qt5 Core/Gui/Widgets 开发库及 GUI 运行依赖（含 libmd4c）；运行生产验签、存储、恢复判定、worker 确认/推迟及真实 ReaderShell 准备交接状态机，不能代替目标 Qt4/MIPS 或真实闪存验收。
+- 管理端定向测试：`tests/test_ota_{store,publish,reports,api,signer}.py`；前端 `src/ota.test.tsx`；`tests/test_ota_lifecycle.py` 在生成 worker 主机夹具后接入真实 P-256 签名向量，验证续期、重启恢复和两轮完整基线的合成报告闭环。主机两轮合成完整闭包与签名向量不代表真实闪存、重启或恢复验收。
 - 现有 `normal-exact-upgrade-v1`、`PANDANOTE-UPGRADE-1` 与 `PANDANOTE-NORMAL-PROOF-1` 保持独立于 RAM 模式。
 - 定向主机测试：`python3 -m unittest discover -s apps/reader-shell/deploy/normal_boot/tests -p test_upgrade_boundaries.py -v`，覆盖精确交接与超级块/remount 边界，测试前需存在该目录下的 `build/`。
 - `test_upgrade.py` 依赖完整外部旧包 `PANDANOTE_UPGRADE_BASELINE`，公开源码不提供该输入；主机夹具不证明真实闪存断电持久性。
@@ -56,7 +63,7 @@ agent: codex
 source: auto
 status: active
 created_ts: 1792688313997
-last_used_ts: 1792695743161
+last_used_ts: 1792733323334
 ---
 <!-- panda:module-meta:end -->
 
@@ -65,4 +72,6 @@ last_used_ts: 1792695743161
 - #20261022-377291c done · 在设备端研究一下如何实现 ota 自动升级 —— 目标：研究设备端 OTA 自动升级并输出可执行详细设计文档；改动 10 个文件
 - #20261022-ff3291c done · 设计管理端 ota 升级 —— 目标：完成管理端 OTA 升级详细设计；改动 9 个文件
 - #20261022-dc2691c done · ota 管理端实现 —— 目标：基于 apps/manager/docs/OTA-DESIGN.md 的设计实现全部任务 记住页面布局合理；改动 42 个文件
+- #20261022-760591c done · 设备端ota 实现 —— 目标：实现设备端手动及每日版本检测、新版本确认提示和 OTA 升级闭环；改动 32 个文件
+- #20261022-058b91c paused · 依次完成以下任务
 <!-- panda:module-knowledge:end -->

@@ -43,6 +43,11 @@ bool checkpointChunk(const std::string &,int64_t done,int64_t total,const std::s
 std::string resumeState(const std::string &,bool newBoot,bool targetActive);
 bool confirmationGesture(const std::string &pressedAttempt,const std::string &pressedGeneration,const std::string &attempt,const std::string &generation,bool promptAtPress,bool promptNow,int dx,int dy);
 bool due(int64_t now,int64_t lastSuccess);bool safePower();
+// 准备撤销与 APPLYING 提交共用短时锁；绝不持有安装锁。
+class PrepareGuard {int fd_;public:PrepareGuard();~PrepareGuard();bool locked()const{return fd_>=0;}private:PrepareGuard(const PrepareGuard&);PrepareGuard&operator=(const PrepareGuard&);};
+bool prepareLive(const Json &,int64_t now,const std::string &boot);
+// 持锁调用：持久态无法读取或已进入安装时，必须保守保持锁定。
+bool revokePreparation();
 const char *stateRoot();const char *runRoot();
 }
 #endif

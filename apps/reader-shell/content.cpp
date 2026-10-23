@@ -12,7 +12,9 @@ extern "C" {
 #include "third_party/sha256/sha256.h"
 }
 
+#if defined(__mips__)
 typedef char ExpectedFloatQreal[sizeof(qreal)==4 ? 1 : -1];
+#endif
 typedef char ExpectedShaWord[sizeof(WORD)==4 ? 1 : -1];
 namespace {
 const qint64 MinEpoch=946684800LL, MaxEpoch=4133980800LL;

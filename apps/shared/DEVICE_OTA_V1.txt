@@ -45,3 +45,9 @@ ota_abi=1、workspace_schema=1。files 最多 128 项，每项恰为 path,mode,b
 429 rate_limited，Retry-After 为有界秒数；503 signing_unavailable,build_unavailable,storage_failure,response_too_large。
 默认每设备 check 每分钟 2 次、report 每分钟 60 次、chunk 每秒 4 次且并发最多 2。
 撤回不能使离线设备已经持有的有效签名即时失效，管理端不远程打断 APPLYING。
+
+八、安装事务、授权续期及状态展示补充
+attempt_id 标识一次目标安装事务，不标识一次授权请求。授权过期只更新 request_nonce，并在设备本地轮换 generation、清除用户确认；同一发布原文、候选、事务包及完整旧基线继续使用原 attempt_id。新的签名授权不得恢复旧确认；重新确认后才能下载和准备安装。改变上述绑定必须拒绝并进入核对，不能用第二个 attempt 绕过原事务占用。旧授权和原始事件由管理端保留；已丢失事务 ID 的历史设备须受控核对，不能猜测或删除服务端 attempt。
+设备以 authorization.json 原子保存匹配的 request 与 offer；request.json、offer.json 为固定旧 helper 的兼容导出，在 APPLYING 前写齐。权威快照存在但损坏时拒绝读取旧导出作为替代。固定 helper 仍从首次接入配置读取，不能自动替换为下载包中的 helper。
+准备交接绑定 attempt、generation、boot_generation、native 进程身份和 started_ms，期限为 90 秒。UI 撤销与 worker 持久化 APPLYING 共用 prepare.lock；撤销前读取持久态，写入 prepare.cancelled 并移除 ready/request。worker 在电源、唤醒、网络退避等提前返回之前处理撤销和超时，最终提交前再次持锁复核。APPLYING 及提交结果不确定时禁止撤销准备来恢复一般输入，进入受控恢复。
+管理接口 observed 表示当前目标的有效阶段；last_event 单独表示最后收到的原始事件。阶段迟到不降低有效状态，跨任务旧事件不覆盖当前任务，矛盾终态仍保留全部证据并暂停。reported_at、last_report、last_event.received_at 均为服务端接收时间，不是设备执行时钟。OFFERED 可携带 power_unsafe、window_busy、prepare_cancelled，表示准备撤销后等待再次确认；任务有效阶段可能仍保留较高的已到达阶段。

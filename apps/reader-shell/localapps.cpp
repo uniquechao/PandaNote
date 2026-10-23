@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stddef.h>
+#if defined(__mips__)
 typedef char StatSize[sizeof(struct stat)==144?1:-1];
 typedef char StatMode[offsetof(struct stat,st_mode)==20?1:-1];
 typedef char StatUid[offsetof(struct stat,st_uid)==28?1:-1];
@@ -17,6 +18,10 @@ extern "C" int __fxstat(int,int,struct stat *);
 extern "C" int __fxstatat(int,int,const char *,struct stat *,int);
 static int oldFstat(int fd,struct stat *s){return __fxstat(3,fd,s);}
 static int oldFstatat(int fd,const char *p,struct stat *s,int flags){return __fxstatat(3,fd,p,s,flags);}
+#else
+static int oldFstat(int fd,struct stat *s){return ::fstat(fd,s);}
+static int oldFstatat(int fd,const char *p,struct stat *s,int flags){return ::fstatat(fd,p,s,flags);}
+#endif
 static const int CAP=2*1024*1024;
 static bool privateDir(int fd){struct stat s;return fd>=0&&!oldFstat(fd,&s)&&S_ISDIR(s.st_mode)&&s.st_uid==::geteuid()&&(s.st_mode&07777)==0700;}
 static bool privateFile(int fd){struct stat s;return fd>=0&&!oldFstat(fd,&s)&&S_ISREG(s.st_mode)&&s.st_uid==::geteuid()&&(s.st_mode&07777)==0600&&s.st_nlink==1&&s.st_size>0&&s.st_size<=CAP;}

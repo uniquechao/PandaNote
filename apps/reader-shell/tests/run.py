@@ -16,13 +16,16 @@ LIB='/work/pandanote/app-development-research/qt-stock-sysroot'
 HEADERS='/work/pandanote/app-development-research/minimal-qt/include'
 WORK=os.environ.get('PANDANOTE_COMPILER_WORK','/work/pandanote-native-completion')
 if not WORK.startswith('/work/pandanote-') or '..' in WORK: raise RuntimeError('unsafe compiler work directory')
-CONTAINER='pandanote-mips-dev'
+CONTAINER=os.environ.get('PANDANOTE_COMPILER_CONTAINER','pandanote-mips-dev')
+if not __import__('re').fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,95}',CONTAINER):raise RuntimeError('unsafe compiler container name')
 BASE_TAG='pandanote-qt-graphics-master:20261020'
 BASE='sha256:20ecae4195e6336bf3453516a52af3ba33fecd3052332d6094399a0a354e6cb0'
 COMMANDS=[]
 
 
 def run(args,**kw):
+    args=list(map(str,args))
+    if args[:2]==['docker','cp'] and os.environ.get('PANDANOTE_COMPILER_ARCHIVE_COPY')=='1':args.insert(2,'--archive')
     result=subprocess.run([str(a) for a in args],capture_output=True,text=True,**kw)
     COMMANDS.append(dict(argv=[str(a) for a in args],returncode=result.returncode,stdout=result.stdout,stderr=result.stderr))
     if result.returncode: raise RuntimeError(result.stderr or result.stdout or str(args))

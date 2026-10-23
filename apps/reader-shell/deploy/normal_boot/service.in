@@ -89,6 +89,7 @@ main(){
     while :; do
         bb sleep 2
         normal_ota_reboot
+        normal_ota_supervise
         if [ -e "$DEV_RUN/poweroff.request" ] || [ -L "$DEV_RUN/poweroff.request" ]; then
             normal_poweroff || normal_rescue poweroff-failed
             while :; do bb sleep 3600; done

@@ -1,6 +1,7 @@
 #!/bin/sh
 # OTA 执行者独立于普通应用及其进程组。
 normal_ota_init(){
+    NORMAL_OTA_RESTARTS=${NORMAL_OTA_RESTARTS:-0}
     NORMAL_OTA_WORKER="$release/ota/ota-worker.mipsel"
     [ -f /user/pandanote/config/ota.json ] || return 0
     normal_spawn ota /bin/busybox env -i PATH="$PATH" HOME=/user/pandanote TMPDIR=/tmp LD_LIBRARY_PATH=/run/pandanote-opt/opt/image/opt/Qtopia/lib:/lib:/usr/lib "$NORMAL_OTA_WORKER" || return 0
@@ -14,4 +15,17 @@ normal_ota_reboot(){
     # 并持久化独占消费标记，保证每次事务最多请求一次重启。
     /bin/busybox env -i PATH="$PATH" LD_LIBRARY_PATH=/run/pandanote-opt/opt/image/opt/Qtopia/lib:/lib:/usr/lib "$NORMAL_OTA_WORKER" --reboot-check || return 0
     bb sync && bb reboot
+}
+
+# 只重启已经退出并被监督器记录的 worker；不杀死卡住或安装中的进程组。
+normal_ota_supervise(){
+    [ -n "${NORMAL_OTA_WORKER-}" ] || return 0
+    [ -f "$DEV_RUN/ota.exit" ] || return 0
+    normal_private_file "$DEV_RUN/ota.exit" || return 0
+    [ "${NORMAL_OTA_RESTARTS:-0}" -lt 3 ] || return 0
+    /bin/busybox env -i PATH="$PATH" LD_LIBRARY_PATH=/run/pandanote-opt/opt/image/opt/Qtopia/lib:/lib:/usr/lib "$NORMAL_OTA_WORKER" --restart-check || return 0
+    NORMAL_OTA_RESTARTS=$((NORMAL_OTA_RESTARTS+1))
+    normal_stop ota || return 0
+    # 每次启动至少间隔服务循环，持续故障保留 USB 与普通应用。
+    normal_ota_init
 }

@@ -6,6 +6,7 @@ extern "C" {
 #include "../third_party/sha256/sha256.h"
 }
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/statvfs.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -43,4 +44,12 @@ Json processJson(const Process &p){Json j=Json::obj();j.object["native_pid"]=Jso
 bool captureProof(std::string &out,Process *native){std::string a,b;if(!readFile("/run/pandanote-normal/app.pid",a,32)||!readFile("/run/pandanote-normal/adbd.pid",b,32))return false;Process p[4];if(!process(strtoll(a.c_str(),0,10),p[2])||!process(p[2].ppid,p[0])||!process(strtoll(b.c_str(),0,10),p[1]))return false;DIR*d=opendir("/proc");if(!d)return false;dirent*e;unsigned count=0,matches=0;while((e=readdir(d))){if(strspn(e->d_name,"0123456789")!=strlen(e->d_name))continue;if(++count>512){closedir(d);return false;}Process child;if(process(strtoll(e->d_name,0,10),child)&&child.ppid==p[2].pid&&child.exe.find("/user/pandanote/apps/releases/")==0&&child.exe.substr(child.exe.size()>19?child.exe.size()-19:0)=="reader-shell.mipsel"){p[3]=child;matches++;}}closedir(d);if(matches!=1||p[0].ppid!=1||p[1].ppid!=p[0].pid||p[1].sid!=p[1].pid||p[1].pgid!=p[1].pid||p[2].sid!=p[2].pid||p[2].pgid!=p[2].pid||p[3].sid!=p[2].pid||p[3].pgid!=p[2].pid)return false;
  std::string cmd;if(!procRead("/proc/cmdline",cmd))return false;out="PANDANOTE-NORMAL-PROOF-1 old "+digest(cmd)+"\n";const char*roles[]={"service","adbd","supervisor","native"};for(unsigned i=0;i<4;i++){std::string h;Process again;if(!hashFile("/proc/"+decimal(p[i].pid)+"/exe",h,0,true)||!process(p[i].pid,again)||!sameProcess(p[i],again))return false;out+=std::string(roles[i])+" "+decimal(p[i].pid)+" "+decimal(p[i].ppid)+" "+decimal(p[i].pgid)+" "+decimal(p[i].sid)+" "+decimal(p[i].start)+" "+h+" "+digest(p[i].cmd)+"\n";}if(native)*native=p[3];return true;}
 bool closure(const Json &files){if(files.type!=Json::Array||files.array.empty()||files.array.size()>128)return false;for(size_t i=0;i<files.array.size();i++){const Json &f=files.array[i];std::string h;uint64_t n;int fd=openFile(f.text("path"),O_RDONLY,false);struct stat s;if(fd<0)return false;bool ok=!fstat(fd,&s)&&(s.st_mode&07777)==f.num("mode");close(fd);if(!ok||!hashFile(f.text("path"),h,&n)||h!=f.text("sha256")||n!=uint64_t(f.num("bytes")))return false;}return true;}
+PrepareGuard::PrepareGuard():fd_(openFile(std::string(runRoot())+"/prepare.lock",O_RDWR|O_CREAT)){if(fd_>=0&&flock(fd_,LOCK_EX|LOCK_NB)){close(fd_);fd_=-1;}}
+PrepareGuard::~PrepareGuard(){if(fd_>=0)close(fd_);}
+bool prepareLive(const Json &q,int64_t now,const std::string &boot){return q.num("schema")==1&&hex(q.text("attempt_id"),32)&&hex(q.text("generation"),32)&&q.text("boot_generation")==boot&&q.num("started_ms")>=0&&q.num("started_ms")<=now&&now-q.num("started_ms")<90000;}
+bool revokePreparation(){PrepareGuard guard;if(!guard.locked())return false;Json s;std::string raw;if(!readFile(std::string(stateRoot())+"/state.json",raw,65536)||!parse(raw,s,65536))return false;
+ std::string phase=s.text("state");if(phase!="IDLE"&&phase!="CHECKING"&&phase!="OFFERED"&&phase!="DOWNLOADING"&&phase!="VERIFIED"&&phase!="WAITING_SAFE_WINDOW"&&phase!="HEALTHY")return false;
+ Json cancel=Json::obj();cancel.object["attempt_id"]=s.get("attempt_id");cancel.object["generation"]=s.get("generation");if(!atomic(std::string(runRoot())+"/prepare.cancelled",encode(cancel)))return false;
+ return removeFile(std::string(runRoot())+"/prepare.reply")&&removeFile(std::string(runRoot())+"/prepare.request");}
+
 }

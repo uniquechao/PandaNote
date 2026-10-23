@@ -16,7 +16,9 @@
 
 完整设备构建依赖 MIPS 交叉编译器、目标 Qt 头文件、经过验证的运行库与启动基线。原厂提取运行库、固件、设备镜像和历史隔离执行镜像不随源码发布；因此当前公开仓库尚不能单独从零生成完整固件。
 
-`build.py` 和 `build_tls.py` 保留交叉编译与校验入口。目标 ABI 是 MIPS32r2、小端、o32、NaN2008；不要用主机编译结果替代目标二进制。编译脚本依赖已有受控编译容器，TLS 显式获取入口为 `python3 apps/reader-shell/build_tls.py --fetch`。尚未在本次公开目录重跑完整交叉编译。
+`toolchain.py image` 可从零建立隔离交叉编译器，`probe` 只编译并核验目标物件，`tls --fetch` 可独立生成目标 TLS 库；`doctor` 和 `compile` 接入已校验的设备 SDK。Mac 首次验证与之后只编译交付的步骤见 [部署与构建说明](docs/DEPLOYMENT.md)。
+
+`build.py` 和 `build_tls.py` 保留底层交叉编译与校验入口。目标 ABI 是 MIPS32r2、小端、o32、NaN2008；不要用主机编译结果替代目标二进制。编译脚本依赖已有受控编译容器，TLS 显式获取入口为 `python3 apps/reader-shell/build_tls.py --fetch`。尚未在本次公开目录重跑完整交叉编译。
 
 需要外部输入的脚本通过 `PANDANOTE_REFERENCE_ROOT`  指定本地参考目录；少量专用审计入口使用 `PANDANOTE_SDIO_MODULE`、`PANDANOTE_UPGRADE_BASELINE`、`PANDANOTE_TRIAGE_TOOL`。这些输入不应提交到公开仓库。
 

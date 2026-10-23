@@ -18,6 +18,9 @@ struct BluetoothUiState {
  BluetoothUiState():timer(0),next(0),configureNext(0),windowUntil(0),pendingUntil(0),sessionUntil(0),operationStart(0),queuedOperation(0),selectedGrants(0),queuedGrants(0),appliedCount(0),fileBytes(0),ackId(0),queuedAllow(false),available(false),cancelRequested(false),deferredReady(false),wantEffect(false){}
 };
 class ReaderShell:public QWidget {
+#ifdef PANDANOTE_OTA_UI_FIXTURE
+    friend class OtaUiFixture;
+#endif
 public:
     explicit ReaderShell(const Content &content,QWidget *parent=0,RadioClient *radio=0);
     bool otaInstalling()const{return otaLocked_;}
@@ -73,9 +76,9 @@ protected:
     virtual void navigationChanged(Page from,Page to,const char *source,int x,int y);
 private:
     int otaTimer_,otaPaintCount_;bool otaLocked_,otaOffered_,otaDeferred_,otaPreparing_,otaSyncBusy_,otaProgress_,otaPressPrompt_;qint64 otaPrepareAt_;
-    QString otaMessage_,otaVersion_,otaCurrent_,otaAttempt_,otaGeneration_,otaPressAttempt_,otaPressGeneration_;
+    QString otaSummary_,otaMessage_,otaVersion_,otaCurrent_,otaAttempt_,otaGeneration_,otaPressAttempt_,otaPressGeneration_;
     void otaInitialize();void otaTick();bool otaInput();void otaCommand(const char*);bool otaTap(int,int);void drawOta(QPainter &);
-    bool otaGesture(int,int)const;bool otaPromptVisible()const{return !standby_&&!shutdownPending_&&otaOffered_&&!otaDeferred_&&!inputActive()&&!noteEditing_;}
+    bool otaGesture(int,int)const;bool otaPromptVisible()const{return page()==Info&&!standby_&&!shutdownPending_&&otaOffered_&&!otaDeferred_&&!inputActive()&&!noteEditing_;}
     bool standby_,shutdownPending_;qint64 touchGuardUntil_;QString powerMessage_;
     bool persistPowerDraft();void drawPowerScreen(QPainter &);void drawStandbyAgenda(QPainter &);
     QString agendaFingerprint(int maximum) const;QString statusFingerprint() const;

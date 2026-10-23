@@ -266,7 +266,7 @@ void ReaderShell::drawPanel(QPainter &p) {
 void ReaderShell::drawStatusBar(QPainter &p) {
     p.save();p.setClipRect(QRect(0,0,480,40));p.fillRect(QRect(0,0,480,40),Qt::white);p.setPen(Qt::black);p.setFont(uiFont(font(),24,true));
     QString clock=displayClock();if(clock.size()!=5 || clock.at(2)!=QChar(':'))clock="--:--";
-    uiLabel(p,QRect(24,3,144,32),clock);uiChevron(p,QPointF(240,19),false,10);
+    uiLabel(p,QRect(24,3,144,32),clock);if(otaOffered_){p.setFont(uiFont(font(),15));uiLabel(p,QRect(172,6,46,28),uiText("更新"));}uiChevron(p,QPointF(240,19),false,10);
     uiIcon(p,WifiIcon,QRectF(328,8,24,24));
     if(!wifiLinked_) {p.setPen(QPen(Qt::black,1.5));p.drawLine(330,9,350,31);}
     p.setPen(QPen(Qt::black,1.5));p.setBrush(Qt::NoBrush);p.drawRoundedRect(QRectF(358,13,28,14),2,2);p.drawLine(389,17,389,23);

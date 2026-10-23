@@ -19,8 +19,8 @@ ERROR_STATES={
  'baseline_mismatch':{'CHECKING','OFFERED','VERIFIED','WAITING_SAFE_WINDOW','APPLYING','RECOVERY_REQUIRED'},
  'bundle_invalid':{'OFFERED','DOWNLOADING','VERIFIED','RECOVERY_REQUIRED'},
  'storage_insufficient':{'OFFERED','DOWNLOADING','VERIFIED','WAITING_SAFE_WINDOW','APPLYING','RECOVERY_REQUIRED'},
- 'power_unsafe':{'WAITING_SAFE_WINDOW'},'window_busy':{'WAITING_SAFE_WINDOW'},
- 'prepare_cancelled':{'WAITING_SAFE_WINDOW'},'proof_invalid':{'WAITING_SAFE_WINDOW','APPLYING','RECOVERY_REQUIRED'},
+ 'power_unsafe':{'OFFERED','WAITING_SAFE_WINDOW'},'window_busy':{'OFFERED','WAITING_SAFE_WINDOW'},
+ 'prepare_cancelled':{'OFFERED','WAITING_SAFE_WINDOW'},'proof_invalid':{'WAITING_SAFE_WINDOW','APPLYING','RECOVERY_REQUIRED'},
  'apply_failed':{'APPLYING','ROLLED_BACK','RECOVERY_REQUIRED'},
  'reboot_failed':{'COMMITTED_PENDING_REBOOT','BOOT_VERIFYING','RECOVERY_REQUIRED'},
  'health_failed':{'BOOT_VERIFYING','ROLLED_BACK','RECOVERY_REQUIRED'},
@@ -173,13 +173,29 @@ class OtaService:
         return self.idempotent(actor,'release.'+release_id+'.'+action,key,value,commit)
     def campaign_view(self,db,row):
         result=dict(row);result['policy']=json_column(row,'policy')
+        result['version']=self.get(db,'ota_releases','release_id',row['release_id'])['version']
         result['counts']={item['state']:item['n'] for item in db.execute('SELECT state,COUNT(*) n FROM ota_targets WHERE campaign_id=? GROUP BY state',(row['campaign_id'],))}
+        current=list(db.execute('SELECT * FROM ota_targets WHERE campaign_id=? AND batch=?',(row['campaign_id'],row['batch'])))
+        healthy=sum(t['state']=='SUCCEEDED' and not t['alert'] for t in current)
+        ready_at=max((t['healthy_at'] or 0 for t in current),default=0)+result['policy']['observation_seconds'] if healthy==len(current) and current else None
+        result['progress']=dict(healthy=healthy,total=len(current),ready_at=ready_at,can_advance=row['state']=='RUNNING' and ready_at is not None and ready_at<=self.now(),reason='task_paused' if row['state']!='RUNNING' else 'health_pending' if ready_at is None else 'observation_pending' if ready_at>self.now() else 'ready')
+        observations=[(t,self.observation(db,t['device_id'],t)) for t in db.execute('SELECT * FROM ota_targets WHERE campaign_id=?',(row['campaign_id'],))]
+        result['device_ids']=[t['device_id'] for t,o in observations]
+        result['unreported']=sum(t['phase'] is None for t,o in observations)
+        result['waiting_confirmation']=sum(bool(o and o['reported_state']=='OFFERED') for t,o in observations)
+        result['blocked']=sum(bool(t['alert'] or o and o['error_code']!='none') for t,o in observations)
         return result
     def campaign(self,key):
         hex_value(key,32);self.expire()
         with self.store.db() as db:
             result=self.campaign_view(db,self.get(db,'ota_campaigns','campaign_id',key))
             result['targets']=[dict(r) for r in db.execute('SELECT * FROM ota_targets WHERE campaign_id=? ORDER BY batch,device_id',(key,))]
+            for target in result['targets']:
+                view=self.observation(db,target['device_id'],target)
+                target['observed']=view
+                device=self.get(db,'ota_devices','device_id',target['device_id'])
+                target['current_version']=self.baseline_version(db,device)
+                target['target_version']=result['version']
             return dict(schema=1,ok=True,campaign=result)
     def create_campaign(self,actor,key,value):
         fields(value,{'release_id','device_ids','batches'}, {'policy'});hex_value(value['release_id'],32)
@@ -371,7 +387,13 @@ class OtaService:
             previous=attempt['state'] if attempt else 'IDLE'
             conflict=previous in TERMINAL and state in TERMINAL and state!=previous
             db.execute('INSERT INTO ota_events(device_id,event_id,attempt_id,body_sha256,raw,created_at) VALUES(?,?,?,?,?,?)',(device_id,value['event_id'],value['attempt_id'],sha,encode(value).decode(),now))
-            db.execute('UPDATE ota_devices SET last_report=?,observed=? WHERE device_id=?',(now,encode(value).decode(),device_id));db.execute('UPDATE ota_targets SET last_report=? WHERE target_id=?',(now,target['target_id']))
+            # observed 为有效阶段；完整原始事件已独立留存在 ota_events。
+            newest=db.execute('SELECT target_id FROM ota_targets WHERE device_id=? ORDER BY rowid DESC LIMIT 1',(device_id,)).fetchone()
+            if newest['target_id']==target['target_id'] and previous not in TERMINAL and (STATES.index(state)>=STATES.index(previous) or error!='none'):
+                effective={**value,'state':previous if STATES.index(state)<STATES.index(previous) else state}
+                db.execute('UPDATE ota_devices SET observed=? WHERE device_id=?',(encode(effective).decode(),device_id))
+            db.execute('UPDATE ota_devices SET last_report=? WHERE device_id=?',(now,device_id))
+            db.execute('UPDATE ota_targets SET last_report=? WHERE target_id=?',(now,target['target_id']))
             if conflict:
                 db.execute('UPDATE ota_attempts SET alert=? WHERE device_id=? AND attempt_id=?',('terminal_conflict',device_id,value['attempt_id']));self.pause(db,target,'terminal_conflict')
                 other=db.execute('SELECT * FROM ota_targets WHERE device_id=? AND active=1 AND target_id!=?',(device_id,target['target_id'])).fetchone()
@@ -400,6 +422,17 @@ class OtaService:
                 if now-last_observation>json_column(row,'policy')['report_timeout_seconds']:
                     db.execute("UPDATE ota_targets SET state='UNKNOWN' WHERE target_id=?",(row['target_id'],))
                     db.execute("UPDATE ota_campaigns SET state='PAUSED',revision=revision+1 WHERE campaign_id=? AND state='RUNNING'",(row['campaign_id'],))
+    def baseline_version(self,db,device):
+        row=db.execute("SELECT version FROM ota_releases r JOIN ota_targets t ON t.release_id=r.release_id WHERE t.device_id=? AND t.candidate=? AND t.phase='HEALTHY' ORDER BY r.sequence DESC LIMIT 1",(device['device_id'],device['baseline'])).fetchone()
+        config=json_column(device,'config')
+        return row['version'] if row else config.get('bootstrap_version') if config.get('baseline')==device['baseline'] else None
+    def observation(self,db,device_id,target):
+        if target is None:return None
+        row=db.execute("SELECT e.raw,e.created_at FROM ota_events e JOIN ota_attempts a ON a.device_id=e.device_id AND a.attempt_id=e.attempt_id WHERE a.target_id=? AND e.device_id=? AND (json_extract(e.raw,'$.state')=? OR (?=0 AND json_extract(e.raw,'$.error_code')!='none')) ORDER BY e.received DESC LIMIT 1",(target['target_id'],device_id,target['phase'],int(target['phase'] in TERMINAL))).fetchone()
+        if not row:return None
+        value=strict_json(row['raw'].encode());value['reported_state']=value['state'];value['state']=target['phase'];value['reported_at']=row['created_at']
+        return value
+
     def device_view(self,device_id):
         self.expire()
         with self.store.db() as db:
@@ -407,7 +440,11 @@ class OtaService:
             if not row:return dict(schema=1,ok=True,enrolled=False,device_id=device_id)
             config=json_column(row,'config');baseline=self.get(db,'ota_baselines','package_sha256',row['baseline']);manifest=json_column(baseline,'data')['manifest']
             target=db.execute('SELECT * FROM ota_targets WHERE device_id=? AND active=1',(device_id,)).fetchone()
-            return dict(schema=1,ok=True,enrolled=True,device_id=device_id,model=config['model'],channels=config['channels'],ota_abi=config['ota_abi'],helper_sha256=config['helper_sha256'],bootstrap_version=config['bootstrap_version'],confirmed=dict(package_sha256=row['baseline'],native_sha256=manifest['native_sha256'],boot_id=manifest['boot_id']),last_report=row['last_report'],observed=json_column(row,'observed') if row['observed'] else None,alert=row['alert'],target=row_json(target),automatic_install=None)
+            latest=target or db.execute('SELECT * FROM ota_targets WHERE device_id=? ORDER BY rowid DESC LIMIT 1',(device_id,)).fetchone()
+            observed=self.observation(db,device_id,latest)
+            raw=db.execute('SELECT raw,created_at FROM ota_events WHERE device_id=? ORDER BY received DESC LIMIT 1',(device_id,)).fetchone()
+            last_event=dict(event=strict_json(raw['raw'].encode()),received_at=raw['created_at']) if raw else None
+            return dict(schema=1,ok=True,enrolled=True,device_id=device_id,model=config['model'],channels=config['channels'],ota_abi=config['ota_abi'],helper_sha256=config['helper_sha256'],bootstrap_version=config['bootstrap_version'],confirmed=dict(package_sha256=row['baseline'],native_sha256=manifest['native_sha256'],boot_id=manifest['boot_id'],version=self.baseline_version(db,row)),last_report=row['last_report'],observed=observed,last_event=last_event,alert=row['alert'],target=row_json(target),automatic_install=None)
     def attempts(self,device_id,cursor=0,limit=20,attempt_cursor=''):
         number(cursor);number(limit,1,100)
         if attempt_cursor:hex_value(attempt_cursor,32)

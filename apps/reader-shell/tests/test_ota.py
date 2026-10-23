@@ -205,8 +205,45 @@ class OtaTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stderr.decode())
             state=json.loads((root/'user/pandanote/state/ota/state.json').read_bytes())
             self.assertEqual((state['state'],state['confirmed'],state['last_check']),('IDLE',0,0))
-            self.assertEqual(state['attempt_id'],'')
-            self.assertLessEqual(len(list((attempt/'events').glob('*.json'))),6)
+            self.assertEqual(state['attempt_id'],'1'*32)
+            self.assertLessEqual(len(list((attempt/'events').glob('*.json'))),7)
+
+    def test_supervisor_restarts_only_exited_safe_workers_with_a_budget(self):
+        with tempfile.TemporaryDirectory(dir=OUT) as temp:
+            root=Path(temp);worker=root/'worker'
+            worker.write_text('#!/bin/sh\n[ -f "$0.allow" ]\n');worker.chmod(0o700)
+            script=r'''
+. "$1"
+DEV_RUN=$2;NORMAL_OTA_WORKER=$2/worker;NORMAL_OTA_RESTARTS=0
+normal_private_file(){ [ -f "$1" ]; }
+normal_stop(){ echo stop >> "$DEV_RUN/log";rm -f "$DEV_RUN/ota.exit"; }
+normal_ota_init(){ echo spawn >> "$DEV_RUN/log"; }
+normal_ota_supervise
+[ ! -e "$DEV_RUN/log" ] || exit 10
+touch "$DEV_RUN/ota.exit"
+normal_ota_supervise
+[ ! -e "$DEV_RUN/log" ] || exit 11
+touch "$NORMAL_OTA_WORKER.allow"
+for iteration in 1 2 3 4;do touch "$DEV_RUN/ota.exit";normal_ota_supervise;done
+[ "$NORMAL_OTA_RESTARTS" = 3 ] || exit 12
+[ "$(wc -l < "$DEV_RUN/log")" = 6 ] || exit 13
+'''
+            result=subprocess.run(['sh','-c',script,'fixture',str(ROOT/'deploy/normal_boot/ota.in'),str(root)],capture_output=True)
+            self.assertEqual(result.returncode,0,result.stderr.decode())
+
+    def test_real_ui_ready_handoff_and_heartbeat_failure(self):
+        binary=Path(os.environ.get('PANDANOTE_OTA_UI_HOST',str(OUT/'ota-ui-host')))
+        if not binary.is_file():self.skipTest('需先生成真实 ReaderShell 主机夹具')
+        with tempfile.TemporaryDirectory(dir=OUT) as temp:
+            root=Path(temp)
+            for name in ('user/pandanote/state/ota','run/pandanote-normal/ota'): (root/name).mkdir(parents=True)
+            for path in (root,*[p for p in root.rglob('*') if p.is_dir()]):path.chmod(0o700)
+            boot=root/'run/pandanote-normal/ota/boot.generation';boot.write_text('3'*32);boot.chmod(0o600)
+            runtime=OUT/'runtime';runtime.mkdir(mode=0o700,exist_ok=True)
+            library=PROJECT/'build/ota-host/qt-root/usr/lib/x86_64-linux-gnu'
+            env={**os.environ,'QT_QPA_PLATFORM':'offscreen','QT_PLUGIN_PATH':os.environ.get('QT_PLUGIN_PATH',str(library/'qt5/plugins')),'LD_LIBRARY_PATH':os.environ.get('LD_LIBRARY_PATH',str(library)),'XDG_RUNTIME_DIR':str(runtime),'XDG_CACHE_HOME':str(OUT/'cache'),'XDG_CONFIG_HOME':str(OUT/'config')}
+            result=subprocess.run([str(binary),str(root)],capture_output=True,env=env)
+            self.assertEqual(result.returncode,0,result.stderr.decode())
 
     def test_next_release_keeps_the_bootstrap_helper_pin(self):
         first=self.fixture();second=list(self.fixture(b'fixture-native-manifest-v2','e'*24))

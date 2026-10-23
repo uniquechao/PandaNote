@@ -17,6 +17,8 @@ OUT=ROOT/'build/apply-tool'
 COMMANDS=[]
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def run(args):
+    args=list(map(str,args))
+    if args[:2]==['docker','cp'] and __import__('os').environ.get('PANDANOTE_COMPILER_ARCHIVE_COPY')=='1':args.insert(2,'--archive')
     p=subprocess.run([str(a) for a in args],capture_output=True,text=True,timeout=45)
     COMMANDS.append({'argv':[str(a) for a in args],'returncode':p.returncode,'stdout':p.stdout,'stderr':p.stderr})
     if p.returncode:raise RuntimeError(p.stderr or p.stdout)
